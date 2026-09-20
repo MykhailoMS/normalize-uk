@@ -3,23 +3,26 @@ name = "normalize-uk"
 version = "0.5.0"
 edition = "2021"
 rust-version = "1.82"
-description = "Ukrainian text normalization, tokenization and sentence splitting"
-license = "MIT"
+description = "Ukrainian text normalization, tokenization and sentence splitting: reads numbers, dates, units, currencies and abbreviations as words"
+documentation = "https://docs.rs/normalize-uk"
 repository = "https://github.com/RustedBytes/normalize-uk"
+license = "MIT"
 readme = "README.md"
 keywords = ["ukrainian", "nlp", "normalization", "tokenizer", "tts"]
 categories = ["text-processing", "internationalization"]
-exclude = ["/.github"]
 
-[lib]
-name = "normalize_uk"
-path = "src/lib.rs"
+# An explicit allowlist, so the published tarball holds exactly the sources,
+# lexicons and tests the crate needs and nothing else.
+include = [
+    "/src/**/*.rs",
+    "/data/lexicons/*.tsv",
+    "/tests/**/*.rs",
+    "/tests/data/*.tsv",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+]
 
 [dependencies]
 fancy-regex = "0.19"
 once_cell = "1"
-
-[dev-dependencies]
-
-[profile.release]
-opt-level = 3
