@@ -1,6 +1,6 @@
 # normalize-uk
 
-[![CI](https://github.com/ThirdLetterC/normalize_uk-cpp/actions/workflows/ci.yml/badge.svg)](https://github.com/ThirdLetterC/normalize_uk-cpp/actions/workflows/ci.yml)
+[![CI](https://github.com/RustedBytes/normalize-uk/actions/workflows/ci.yml/badge.svg)](https://github.com/RustedBytes/normalize-uk/actions/workflows/ci.yml)
 
 Ukrainian text normalization, tokenization and sentence splitting, in Rust.
 
