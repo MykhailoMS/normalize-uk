@@ -2,12 +2,27 @@
 //! what order.
 
 use fancy_regex::Regex;
-use once_cell::sync::Lazy;
 use std::collections::HashSet;
+use std::sync::LazyLock;
 
 use super::lexicon;
 use super::numbers::number_to_words;
-use super::passes::*;
+use super::passes::{
+    expand_abbreviations, normalize_abbreviations, normalize_addresses,
+    normalize_biblical_references, normalize_case_context, normalize_compounds,
+    normalize_coordinates, normalize_counted_noun_context, normalize_counted_nouns,
+    normalize_currency, normalize_cyrillic_alphanumeric, normalize_dates, normalize_decimals,
+    normalize_discourse_dates, normalize_english, normalize_finance, normalize_fractions,
+    normalize_homoglyphs, normalize_identifiers, normalize_ip_addresses, normalize_known_acronyms,
+    normalize_math, normalize_measurements, normalize_medical, normalize_multipliers,
+    normalize_negatives, normalize_number_groups, normalize_ordinal_triggers, normalize_ordinals,
+    normalize_overprecise_currency_decimals, normalize_page_ranges, normalize_percent,
+    normalize_quarters, normalize_ranges, normalize_regional_currency_aliases,
+    normalize_scientific, normalize_section_ranges, normalize_sections, normalize_symbol_currency,
+    normalize_symbols, normalize_technical_alphanumeric, normalize_text_with_numbers,
+    normalize_text_with_phone_numbers, normalize_time, normalize_typography, normalize_unicode,
+    normalize_versions, normalize_web, transliterate_to_cyrillic,
+};
 use super::re::{cap, compile, compile_i, matched, sub, whole};
 use super::text::{
     contains_any, contains_any_token, has_ascii_alpha, has_ascii_digit, has_roman_candidate,
@@ -86,10 +101,12 @@ struct Protected {
 impl Protected {
     /// Replaces `value` with a fresh sentinel and remembers it.
     fn protect(&mut self, value: impl Into<String>) -> String {
-        let key = format!(
-            "\u{e000}{}\u{e001}",
-            char::from_u32(0xe100 + self.spans.len() as u32).unwrap_or('\u{e0ff}')
-        );
+        let marker = u32::try_from(self.spans.len())
+            .ok()
+            .and_then(|len| 0xe100_u32.checked_add(len))
+            .and_then(char::from_u32)
+            .unwrap_or('\u{e0ff}');
+        let key = format!("\u{e000}{marker}\u{e001}");
         self.spans.push((key.clone(), value.into()));
         key
     }
@@ -201,8 +218,8 @@ fn protect_opaque_markup(
     // Citation page markers in Wikipedia extracts look like invalid clock
     // values (".:33–34:39–43"). Remove this metadata before invalid-time
     // protection; otherwise only fragments of the marker are spoken.
-    static WIKIPEDIA_PAGE_CITATION: Lazy<Regex> =
-        Lazy::new(|| compile(r"\.(?::\d+(?:(?:-|–|—)\d+)?)+(?=\s|$)"));
+    static WIKIPEDIA_PAGE_CITATION: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\.(?::\d+(?:(?:-|–|—)\d+)?)+(?=\s|$)"));
     let mut text = if text.contains(".:") {
         sub(text, &WIKIPEDIA_PAGE_CITATION, |_| ".".to_owned())
     } else {
@@ -244,7 +261,7 @@ fn protect_opaque_markup(
         text = out;
     }
 
-    static OPAQUE: Lazy<Regex> = Lazy::new(|| {
+    static OPAQUE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(<!--[\s\S]*?-->|```[\s\S]*?```|~~~[\s\S]*?~~~|``(?:[^`\r\n]|`(?!`))*``",
             r"|`[^`\r\n]*`|<(code|pre)\b[^>]*>[\s\S]*?</\2\s*>",
@@ -300,15 +317,15 @@ fn protect_opaque_markup(
         text = out;
     }
 
-    static MARKDOWN_REFERENCE: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"(^|\n)([ \t]{0,3}\[[^\]:\r\n]+\]:[ \t]*)(\S+)"));
+    static MARKDOWN_REFERENCE: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"(^|\n)([ \t]{0,3}\[[^\]:\r\n]+\]:[ \t]*)(\S+)"));
     text = sub(&text, &MARKDOWN_REFERENCE, |m| {
         format!("{}{}{}", cap(m, 1), cap(m, 2), protected.protect(cap(m, 3)))
     });
 
-    static MALFORMED_SCIENTIFIC: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^A-Za-z\d])([+\-]?\d+(?:[.,]\d+)?[eE][+\-]?)(?![+\-]?\d)"));
-    static IEEE_REVISION: Lazy<Regex> = Lazy::new(|| compile(r"^802\.\d{1,2}[eE]$"));
+    static MALFORMED_SCIENTIFIC: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^A-Za-z\d])([+\-]?\d+(?:[.,]\d+)?[eE][+\-]?)(?![+\-]?\d)"));
+    static IEEE_REVISION: LazyLock<Regex> = LazyLock::new(|| compile(r"^802\.\d{1,2}[eE]$"));
     text = sub(&text, &MALFORMED_SCIENTIFIC, |m| {
         if IEEE_REVISION.is_match(cap(m, 2)).unwrap_or(false) {
             return whole(m).to_owned();
@@ -316,7 +333,7 @@ fn protect_opaque_markup(
         format!("{}{}", cap(m, 1), protected.protect(cap(m, 2)))
     });
 
-    static ISBN_CANDIDATE: Lazy<Regex> = Lazy::new(|| {
+    static ISBN_CANDIDATE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(r"\bISBN(?:-1[03])?\s*[:№#]?\s*((?:97[89][ -]?)?[0-9Xx](?:[ -]?[0-9Xx]){8,12})\b")
     });
     text = sub(&text, &ISBN_CANDIDATE, |m| {
@@ -327,7 +344,7 @@ fn protect_opaque_markup(
         }
     });
 
-    static LABELLED_HASH_CANDIDATE: Lazy<Regex> = Lazy::new(|| {
+    static LABELLED_HASH_CANDIDATE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(
             r"\b((?:SHA-?(?:1|224|256|384|512)|SHA3-?(?:256|512)|BLAKE2[bs]|MD5))\s*[:=]?\s*([0-9A-Fa-f]{1,128})\b",
         )
@@ -340,9 +357,9 @@ fn protect_opaque_markup(
         }
     });
 
-    static ISO_DURATION_CANDIDATE: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\bP(?=\d|T(?:\d|[.,]\d))[0-9YMWDTHS.,]+\b"));
-    static VALID_ISO_DURATION: Lazy<Regex> = Lazy::new(|| {
+    static ISO_DURATION_CANDIDATE: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\bP(?=\d|T(?:\d|[.,]\d))[0-9YMWDTHS.,]+\b"));
+    static VALID_ISO_DURATION: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"^P(?:(\d+(?:[.,]\d+)?)Y)?(?:(\d+(?:[.,]\d+)?)M)?(?:(\d+(?:[.,]\d+)?)W)?",
             r"(?:(\d+(?:[.,]\d+)?)D)?(?:T(?:(\d+(?:[.,]\d+)?)H)?(?:(\d+(?:[.,]\d+)?)M)?",
@@ -366,8 +383,8 @@ fn protect_opaque_markup(
         text = normalize_biblical_references(&text);
     }
 
-    static INVALID_CLOCK_CANDIDATE: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d:])(\d{1,3}):(\d{2})(?::(\d{2}))?(?![\d:])"));
+    static INVALID_CLOCK_CANDIDATE: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d:])(\d{1,3}):(\d{2})(?::(\d{2}))?(?![\d:])"));
     text = sub(&text, &INVALID_CLOCK_CANDIDATE, |m| {
         let hour = parse_i32(cap(m, 2));
         let minute = parse_i32(cap(m, 3));
@@ -386,7 +403,7 @@ fn protect_opaque_markup(
         format!("{}{}", cap(m, 1), protected.protect(value))
     });
 
-    static ZONED_CLOCK_CANDIDATE: Lazy<Regex> = Lazy::new(|| {
+    static ZONED_CLOCK_CANDIDATE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(
             r"(\d{1,2}):([0-5]\d)(?::([0-5]\d))?\s*(?:UTC|GMT)\s*([+-])(\d{1,2})(?::?(\d{2}))?",
         )
@@ -401,10 +418,10 @@ fn protect_opaque_markup(
         }
     });
 
-    static STANDALONE_TIMEZONE: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\b(?:UTC|GMT)\s*[+-](\d{2}):?(\d{2})\b"));
-    static BARE_ZONED_CLOCK: Lazy<Regex> =
-        Lazy::new(|| compile(r"\b\d{1,2}:[0-5]\d(?::[0-5]\d)?\s+[+-](\d{2}):(\d{2})(?!\d)"));
+    static STANDALONE_TIMEZONE: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\b(?:UTC|GMT)\s*[+-](\d{2}):?(\d{2})\b"));
+    static BARE_ZONED_CLOCK: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b\d{1,2}:[0-5]\d(?::[0-5]\d)?\s+[+-](\d{2}):(\d{2})(?!\d)"));
     for re in [&*STANDALONE_TIMEZONE, &*BARE_ZONED_CLOCK] {
         text = sub(&text, re, |m| {
             let hour = parse_i32(cap(m, 1));
@@ -417,7 +434,7 @@ fn protect_opaque_markup(
         });
     }
 
-    static IPV4_CANDIDATE: Lazy<Regex> = Lazy::new(|| {
+    static IPV4_CANDIDATE: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"(^|[^\d.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:/(\d{1,3}))?(?::(\d{1,6}))?(?![\d.])",
         )
@@ -433,8 +450,8 @@ fn protect_opaque_markup(
         format!("{group1}{}", protected.protect(&whole(m)[group1.len()..]))
     });
 
-    static BRACKETED_IPV6_PORT_CANDIDATE: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^0-9A-Fa-f:])(\[[0-9A-Fa-f:]+\]):(\d{1,6})(?!\d)"));
+    static BRACKETED_IPV6_PORT_CANDIDATE: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^0-9A-Fa-f:])(\[[0-9A-Fa-f:]+\]):(\d{1,6})(?!\d)"));
     text = sub(&text, &BRACKETED_IPV6_PORT_CANDIDATE, |m| {
         if parse_i32(cap(m, 3)) > 65535 {
             let value = format!("{}:{}", cap(m, 2), cap(m, 3));
@@ -444,7 +461,7 @@ fn protect_opaque_markup(
         }
     });
 
-    static INVALID_IPV6_PREFIX: Lazy<Regex> = Lazy::new(|| {
+    static INVALID_IPV6_PREFIX: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"(^|[^0-9A-Fa-f:])((?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}/(\d{1,3}))(?![0-9A-Fa-f:/])",
         )
@@ -457,7 +474,7 @@ fn protect_opaque_markup(
         }
     });
 
-    static GEO_CANDIDATE: Lazy<Regex> = Lazy::new(|| {
+    static GEO_CANDIDATE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"\bgeo\s*:\s*([+\-]?\d{1,3}(?:\.\d+)?)\s*[,;]\s*([+\-]?\d{1,3}(?:\.\d+)?)",
             r"(?:\s*[,;]\s*[+\-]?\d+(?:\.\d+)?)?"
@@ -473,7 +490,7 @@ fn protect_opaque_markup(
         }
     });
 
-    static LABELLED_COORDINATE: Lazy<Regex> = Lazy::new(|| {
+    static LABELLED_COORDINATE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(?:lat(?:itude)?|широта)\s*[:=]\s*([+\-]?\d{1,3}(?:[.,]\d+)?)\s*[,; ]+\s*",
             r"(?:lon(?:gitude)?|довгота)\s*[:=]\s*([+\-]?\d{1,3}(?:[.,]\d+)?)"
@@ -489,7 +506,7 @@ fn protect_opaque_markup(
         }
     });
 
-    static DMS_COORDINATE: Lazy<Regex> = Lazy::new(|| {
+    static DMS_COORDINATE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(
             r#"(\d{1,3})\s*°\s*(?:(\d{1,2})([.,]\d+)?\s*(?:′|')\s*)?(?:(\d{1,2})\s*(?:″|")\s*)?([NSEW])"#,
         )
@@ -514,7 +531,7 @@ fn protect_opaque_markup(
     });
 
     if options.validate_dates {
-        static LOCAL_DATE: Lazy<Regex> = Lazy::new(|| {
+        static LOCAL_DATE: LazyLock<Regex> = LazyLock::new(|| {
             compile(concat!(
                 r"(^|[^\d./-])(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})(?!\d)(?![./-]\d)",
                 r"(?!x\d)(?!X\d)(?!х\d)(?!Х\d)(?!×\d)"
@@ -552,7 +569,8 @@ fn protect_opaque_markup(
             format!("{group1}{}", protected.protect(&whole(m)[group1.len()..]))
         });
 
-        static ISO_DATE: Lazy<Regex> = Lazy::new(|| compile(r"\b(\d{4})-(\d{2})-(\d{2})\b"));
+        static ISO_DATE: LazyLock<Regex> =
+            LazyLock::new(|| compile(r"\b(\d{4})-(\d{2})-(\d{2})\b"));
         text = sub(&text, &ISO_DATE, |m| {
             if is_valid_date(parse_i32(cap(m, 3)), parse_i32(cap(m, 2)), parse_i32(cap(m, 1))) {
                 whole(m).to_owned()
@@ -561,7 +579,8 @@ fn protect_opaque_markup(
             }
         });
 
-        static ISO_WEEK: Lazy<Regex> = Lazy::new(|| compile_i(r"\b(\d{4})-W(\d{2})(?:-(\d))?\b"));
+        static ISO_WEEK: LazyLock<Regex> =
+            LazyLock::new(|| compile_i(r"\b(\d{4})-W(\d{2})(?:-(\d))?\b"));
         text = sub(&text, &ISO_WEEK, |m| {
             let valid = is_valid_iso_week(parse_i32(cap(m, 1)), parse_i32(cap(m, 2)))
                 && (!matched(m, 3) || (1..=7).contains(&parse_i32(cap(m, 3))));
@@ -572,7 +591,7 @@ fn protect_opaque_markup(
             }
         });
 
-        static ISO_ORDINAL: Lazy<Regex> = Lazy::new(|| compile(r"\b(\d{4})-(\d{3})\b"));
+        static ISO_ORDINAL: LazyLock<Regex> = LazyLock::new(|| compile(r"\b(\d{4})-(\d{3})\b"));
         text = sub(&text, &ISO_ORDINAL, |m| {
             let year = parse_i32(cap(m, 1));
             let day = parse_i32(cap(m, 2));
@@ -585,10 +604,10 @@ fn protect_opaque_markup(
         });
     }
 
-    static IANA_ZONE: Lazy<Regex> = Lazy::new(|| {
+    static IANA_ZONE: LazyLock<Regex> = LazyLock::new(|| {
         compile(r"(\b\d{1,2}:[0-5]\d(?::[0-5]\d)?\s+)([A-Za-z_+-]+/[A-Za-z0-9_+/-]+)\b")
     });
-    static KNOWN_ZONES: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+    static KNOWN_ZONES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         [
             "europe/kyiv",
             "europe/london",
@@ -610,7 +629,7 @@ fn protect_opaque_markup(
 }
 
 fn normalize_output_spacing(text: &str) -> String {
-    static BEFORE_PUNCTUATION: Lazy<Regex> = Lazy::new(|| compile(r"[ \t]+([,.;:!?])"));
+    static BEFORE_PUNCTUATION: LazyLock<Regex> = LazyLock::new(|| compile(r"[ \t]+([,.;:!?])"));
     sub(text, &BEFORE_PUNCTUATION, |m| cap(m, 1).to_owned())
 }
 
@@ -631,7 +650,7 @@ fn strip_mediawiki_heading_markup(text: &str) -> String {
             Some(content)
                 if (2..=6).contains(&marks) && marks == closing && !content.is_empty() =>
             {
-                out.push_str(content)
+                out.push_str(content);
             }
             _ => out.push_str(line),
         }
@@ -653,8 +672,9 @@ fn protect_ambiguous_currency_symbols(text: &str, protected: &mut Protected) -> 
 
 /// Protects dates where both fields could be a month.
 fn protect_ambiguous_numeric_dates(text: &str, protected: &mut Protected) -> String {
-    static AMBIGUOUS: Lazy<Regex> =
-        Lazy::new(|| compile(r"\b(?:0?[1-9]|1[0-2])[./-](?:0?[1-9]|1[0-2])[./-](?:\d{2}|\d{4})\b"));
+    static AMBIGUOUS: LazyLock<Regex> = LazyLock::new(|| {
+        compile(r"\b(?:0?[1-9]|1[0-2])[./-](?:0?[1-9]|1[0-2])[./-](?:\d{2}|\d{4})\b")
+    });
     sub(text, &AMBIGUOUS, |m| protected.protect(whole(m)))
 }
 
@@ -664,11 +684,13 @@ fn protect_ambiguous_numeric_dates(text: &str, protected: &mut Protected) -> Str
 /// # use normalize_uk::uktextnorm::normalize;
 /// assert_eq!(normalize("5 кг"), "п'ять кілограмів");
 /// ```
+#[must_use]
 pub fn normalize(text: &str) -> String {
     normalize_with(text, &NormalizeOptions::default())
 }
 
 /// Normalizes `text` with the options of a named preset.
+#[must_use]
 pub fn normalize_preset(text: &str, preset: NormalizePreset) -> String {
     normalize_with(text, &NormalizeOptions::preset(preset))
 }
@@ -718,7 +740,7 @@ pub fn normalize_with(text: &str, options: &NormalizeOptions) -> String {
     if options.normalize_english_words && has_ascii_digit(&text) && has_ascii_alpha(&text) {
         // Progressive-scan resolution suffixes must be read before homoglyph
         // repair turns the Latin p in "1080p-якістю" into Cyrillic р.
-        static QUALITY_RESOLUTION: Lazy<Regex> = Lazy::new(|| {
+        static QUALITY_RESOLUTION: LazyLock<Regex> = LazyLock::new(|| {
             compile(
                 r"(^|[^A-Za-z0-9А-Яа-яЄєІіЇїҐґ])(480|576|720|1080|1440|2160|4320)[pP]-(якістю|якість)",
             )
@@ -726,7 +748,7 @@ pub fn normalize_with(text: &str, options: &NormalizeOptions) -> String {
         text = sub(&text, &QUALITY_RESOLUTION, |m| {
             format!("{}{} {} пі", cap(m, 1), cap(m, 3), number_to_words(parse_u64(cap(m, 2))))
         });
-        static PROGRESSIVE_RESOLUTION: Lazy<Regex> = Lazy::new(|| {
+        static PROGRESSIVE_RESOLUTION: LazyLock<Regex> = LazyLock::new(|| {
             compile(
                 r"(^|[^A-Za-z0-9А-Яа-яЄєІіЇїҐґ])(480|576|720|1080|1440|2160|4320)[pP](?![A-Za-z0-9])",
             )
@@ -761,7 +783,7 @@ pub fn normalize_with(text: &str, options: &NormalizeOptions) -> String {
         text = normalize_finance(&text, false);
     }
     if has_ascii_digit(&text) {
-        static GROUPED_CURRENCY: Lazy<Regex> = Lazy::new(|| {
+        static GROUPED_CURRENCY: LazyLock<Regex> = LazyLock::new(|| {
             compile_i(&format!(
                 r"(?:{})\s*[1-9]\d{{0,2}}(?:(?:,\d{{3}})+\.\d{{1,4}}|(?:\.\d{{3}})+,\d{{1,4}})",
                 *super::patterns::CURRENCY_TOKEN_ALT

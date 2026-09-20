@@ -4,9 +4,9 @@
 //! order is preserved, because several tables are matched longest-key-first and
 //! a few (abbreviations) rely on the file order directly.
 
-use once_cell::sync::Lazy;
-
 /// Grammatical gender of a lexicon entry.
+use std::sync::LazyLock;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Gender {
     Masculine,
@@ -104,7 +104,7 @@ fn pairs(source: &'static str, header: &str) -> Vec<Pair> {
 
 macro_rules! table {
     ($name:ident, $ty:ty, $file:literal, $header:literal, $row:expr) => {
-        pub(crate) static $name: Lazy<Vec<$ty>> = Lazy::new(|| {
+        pub(crate) static $name: LazyLock<Vec<$ty>> = LazyLock::new(|| {
             rows(include_str!(concat!("../../data/lexicons/", $file)), $header)
                 .into_iter()
                 .map($row)
@@ -115,8 +115,8 @@ macro_rules! table {
 
 macro_rules! pair_table {
     ($name:ident, $file:literal, $header:literal) => {
-        pub(crate) static $name: Lazy<Vec<Pair>> =
-            Lazy::new(|| pairs(include_str!(concat!("../../data/lexicons/", $file)), $header));
+        pub(crate) static $name: LazyLock<Vec<Pair>> =
+            LazyLock::new(|| pairs(include_str!(concat!("../../data/lexicons/", $file)), $header));
     };
 }
 
@@ -167,7 +167,7 @@ table!(
 );
 
 /// Counted nouns in the instrumental or locative case, keyed by surface form.
-pub(crate) static COUNTED_OBLIQUE: Lazy<Vec<Pair>> = Lazy::new(|| {
+pub(crate) static COUNTED_OBLIQUE: LazyLock<Vec<Pair>> = LazyLock::new(|| {
     pairs(include_str!("../../data/lexicons/counted_oblique.tsv"), "key\tgrammatical_case")
 });
 

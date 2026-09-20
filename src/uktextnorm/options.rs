@@ -183,6 +183,7 @@ impl Default for NormalizeOptions {
 
 impl NormalizeOptions {
     /// The options a named preset stands for.
+    #[must_use]
     pub fn preset(preset: NormalizePreset) -> Self {
         let base = Self::default();
         match preset {

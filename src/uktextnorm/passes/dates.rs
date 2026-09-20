@@ -1,8 +1,9 @@
 //! Dates, date ranges, durations and year references.
 
 use fancy_regex::{Captures, Regex};
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::fmt::Write as _;
+use std::sync::LazyLock;
 
 use crate::uktextnorm::lexicon::Forms;
 use crate::uktextnorm::morphology::plural;
@@ -41,7 +42,7 @@ const MONTH_ANY: &str = concat!(
 
 /// Maps an abbreviated or inflected month to its genitive form.
 #[rustfmt::skip]
-static MONTH_GENITIVE_BY_TOKEN: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+static MONTH_GENITIVE_BY_TOKEN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     [
         ("січ", "січня"), ("січня", "січня"), ("лют", "лютого"), ("лютого", "лютого"),
         ("бер", "березня"), ("березня", "березня"), ("квіт", "квітня"), ("квітня", "квітня"),
@@ -57,7 +58,7 @@ static MONTH_GENITIVE_BY_TOKEN: Lazy<HashMap<&'static str, &'static str>> = Lazy
 
 /// Maps an abbreviated or inflected month to its nominative form.
 #[rustfmt::skip]
-static MONTH_NOMINATIVE_BY_TOKEN: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+static MONTH_NOMINATIVE_BY_TOKEN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     [
         ("січ", "січень"), ("січень", "січень"), ("січня", "січень"), ("лют", "лютий"),
         ("лютий", "лютий"), ("лютого", "лютий"), ("бер", "березень"), ("березень", "березень"),
@@ -151,9 +152,11 @@ impl Dates {
         if !(1..=12).contains(&month_value) {
             return None;
         }
-        if self.validate && !is_valid_date(day_value, month_value, year_value as i32) {
+        let year_for_validation = i32::try_from(year_value).ok()?;
+        if self.validate && !is_valid_date(day_value, month_value, year_for_validation) {
             return None;
         }
+        let month_index = usize::try_from(month_value - 1).ok()?;
         let spoken_day = if forced_day_form.is_empty() {
             self.day_words(day, "nom_n")
         } else {
@@ -161,7 +164,7 @@ impl Dates {
         };
         Some(format!(
             "{spoken_day} {} {} року",
-            MONTHS_GENITIVE[(month_value - 1) as usize],
+            MONTHS_GENITIVE[month_index],
             ordinal_words(year_value, "gen")
         ))
     }
@@ -202,10 +205,10 @@ impl Dates {
 fn time_words(hour: u64, minute: u64, second: Option<u64>) -> String {
     let mut out = hours_words(hour);
     if minute != 0 {
-        out.push_str(&format!(" {}", minutes_words(minute, &MINUTE_FORMS)));
+        let _ = write!(out, " {}", minutes_words(minute, &MINUTE_FORMS));
     }
     if let Some(second) = second.filter(|&s| s != 0) {
-        out.push_str(&format!(" {}", minutes_words(second, &SECOND_FORMS)));
+        let _ = write!(out, " {}", minutes_words(second, &SECOND_FORMS));
     }
     out
 }
@@ -220,7 +223,7 @@ pub(crate) fn normalize_dates(
 ) -> String {
     let dates = Dates { style, validate, range_style, order };
 
-    static ISO_DURATION: Lazy<Regex> = Lazy::new(|| {
+    static ISO_DURATION: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"\bP(?:(\d+(?:[.,]\d+)?)Y)?(?:(\d+(?:[.,]\d+)?)M)?(?:(\d+(?:[.,]\d+)?)W)?",
             r"(?:(\d+(?:[.,]\d+)?)D)?(?:T(?:(\d+(?:[.,]\d+)?)H)?(?:(\d+(?:[.,]\d+)?)M)?",
@@ -266,12 +269,19 @@ pub(crate) fn normalize_dates(
         }
     });
 
-    static ISO_WEEK: Lazy<Regex> = Lazy::new(|| compile_i(r"\b(\d{4})-W(\d{2})(?:-(\d))?\b"));
+    static ISO_WEEK: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\b(\d{4})-W(\d{2})(?:-(\d))?\b"));
     let text = sub(&text, &ISO_WEEK, |m| {
         let year = parse_u64(cap(m, 1));
         let week = parse_u64(cap(m, 2));
         let day = if matched(m, 3) { parse_u64(cap(m, 3)) } else { 0 };
-        if !is_valid_iso_week(year as i32, week as i32) || day > 7 {
+        let Ok(year_for_validation) = i32::try_from(year) else {
+            return whole(m).to_owned();
+        };
+        let Ok(week_for_validation) = i32::try_from(week) else {
+            return whole(m).to_owned();
+        };
+        if !is_valid_iso_week(year_for_validation, week_for_validation) || day > 7 {
             return whole(m).to_owned();
         }
         let prefix = if day != 0 {
@@ -282,7 +292,7 @@ pub(crate) fn normalize_dates(
         format!("{prefix}{} тижня {} року", ordinal_words(week, "gen"), ordinal_words(year, "gen"))
     });
 
-    static ISO_ORDINAL_DATE: Lazy<Regex> = Lazy::new(|| compile(r"\b(\d{4})-(\d{3})\b"));
+    static ISO_ORDINAL_DATE: LazyLock<Regex> = LazyLock::new(|| compile(r"\b(\d{4})-(\d{3})\b"));
     let text = sub(&text, &ISO_ORDINAL_DATE, |m| {
         let year = parse_u64(cap(m, 1));
         let day = parse_u64(cap(m, 2));
@@ -293,7 +303,7 @@ pub(crate) fn normalize_dates(
         format!("{} день {} року", ordinal_words(day, "nom_m"), ordinal_words(year, "gen"))
     });
 
-    static ISO_DATETIME: Lazy<Regex> = Lazy::new(|| {
+    static ISO_DATETIME: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"\b(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):([0-5]\d)(?::([0-5]\d))?",
             r"(?:(Z)|(?:(UTC|GMT)\s*)?([+-])(\d{2})(?::?(\d{2}))?)?(?![A-Za-z0-9:+-])"
@@ -318,19 +328,20 @@ pub(crate) fn normalize_dates(
                 return whole(m).to_owned();
             }
             let sign = if cap(m, 9) == "+" { "плюс " } else { "мінус " };
-            out.push_str(&format!(
+            let _ = write!(
+                out,
                 " за часовим поясом {sign}{} {}",
                 number_to_words(offset_hour),
                 plural(offset_hour, &Forms { one: "година", few: "години", many: "годин" })
-            ));
+            );
             if offset_minute != 0 {
-                out.push_str(&format!(" {}", minutes_words(offset_minute, &MINUTE_FORMS)));
+                let _ = write!(out, " {}", minutes_words(offset_minute, &MINUTE_FORMS));
             }
         }
         out
     });
 
-    static CROSS_MONTH_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static CROSS_MONTH_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile(&format!(
             r"\b(\d{{1,2}})\s+({MONTH_ALT})\s*(?:-|−|–|—)\s*(\d{{1,2}})\s+({MONTH_ALT})(?:\s+(\d{{4}}))?(?![\dА-Яа-яЄєІіЇїҐґ])"
         ))
@@ -342,7 +353,7 @@ pub(crate) fn normalize_dates(
             format!("{} {}", ordinal_words(parse_u64(cap(m, 3)), "gen"), month_name(cap(m, 4)));
         let mut out = dates.range_connector(prefix, &low, &high);
         if matched(m, 5) {
-            out.push_str(&format!(" {} року", ordinal_words(parse_u64(cap(m, 5)), "gen")));
+            let _ = write!(out, " {} року", ordinal_words(parse_u64(cap(m, 5)), "gen"));
         }
         out
     });
@@ -358,7 +369,7 @@ pub(crate) fn normalize_dates(
         )
     });
 
-    static DAY_RANGE_WITHOUT_YEAR: Lazy<Regex> = Lazy::new(|| {
+    static DAY_RANGE_WITHOUT_YEAR: LazyLock<Regex> = LazyLock::new(|| {
         compile(&format!(
             r"\b(\d{{1,2}})\s*(?:-|−|–|—)\s*(\d{{1,2}})\s+({MONTH_ALT})(?!\s+\d{{2,4}})(?![А-Яа-яЄєІіЇїҐґ])"
         ))
@@ -375,7 +386,7 @@ pub(crate) fn normalize_dates(
         format!("{} {}", dates.range_connector(prefix, &low, &high), month_name(cap(m, 3)))
     });
 
-    static NUMERIC_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static NUMERIC_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\s*(?:-|−|–|—)\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
     });
     let text = sub(&text, &NUMERIC_RANGE, |m| {
@@ -388,7 +399,7 @@ pub(crate) fn normalize_dates(
         }
     });
 
-    static ISO_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static ISO_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile(r"\b(\d{4})-(\d{2})-(\d{2})\s*(?:-|−|–|—)\s*(\d{4})-(\d{2})-(\d{2})\b")
     });
     let text = sub(&text, &ISO_RANGE, |m| {
@@ -406,19 +417,19 @@ pub(crate) fn normalize_dates(
         let low = format!(
             "{} {} {} року",
             dates.range_day_words(cap(m, 3)),
-            MONTHS_GENITIVE[(m1 - 1) as usize],
+            MONTHS_GENITIVE[usize::try_from(m1 - 1).unwrap_or_default()],
             ordinal_words(parse_u64(cap(m, 1)), "gen")
         );
         let high = format!(
             "{} {} {} року",
             dates.range_day_words(cap(m, 6)),
-            MONTHS_GENITIVE[(m2 - 1) as usize],
+            MONTHS_GENITIVE[usize::try_from(m2 - 1).unwrap_or_default()],
             ordinal_words(parse_u64(cap(m, 4)), "gen")
         );
         range_connector(range_style, &low, &high, false)
     });
 
-    static GOVERNED_NUMERIC_DATE: Lazy<Regex> = Lazy::new(|| {
+    static GOVERNED_NUMERIC_DATE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ])(від|до|з|із|після|станом\s+на)\s+",
             r"(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})\b(?:\s+(?:року|р\.))?"
@@ -444,41 +455,42 @@ pub(crate) fn normalize_dates(
         sub(text, re, |m| read(m).unwrap_or_else(|| whole(m).to_owned()))
     }
 
-    static DMY_DASH: Lazy<Regex> = Lazy::new(|| compile(r"\b(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})\b"));
+    static DMY_DASH: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})\b"));
     let text = try_read(&text, &DMY_DASH, |m| {
         dates.ordered_date_words(cap(m, 1), cap(m, 2), cap(m, 3), "")
     });
 
-    static DMY_SHORT_DOT: Lazy<Regex> =
-        Lazy::new(|| compile(r"\b(\d{1,2})\.(\d{1,2})\.(\d{2})\b(?:\s+(?:року|р\.))?"));
+    static DMY_SHORT_DOT: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b(\d{1,2})\.(\d{1,2})\.(\d{2})\b(?:\s+(?:року|р\.))?"));
     let text = try_read(&text, &DMY_SHORT_DOT, |m| {
         dates.ordered_date_words(cap(m, 1), cap(m, 2), cap(m, 3), "")
     });
 
-    static DMY_SHORT_SLASH: Lazy<Regex> =
-        Lazy::new(|| compile(r"\b(\d{1,2})/(\d{1,2})/(\d{2})\b(?!/\d)(?:\s+(?:року|р\.))?"));
+    static DMY_SHORT_SLASH: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b(\d{1,2})/(\d{1,2})/(\d{2})\b(?!/\d)(?:\s+(?:року|р\.))?"));
     let text = try_read(&text, &DMY_SHORT_SLASH, |m| {
         dates.slash_date_words(cap(m, 1), cap(m, 2), cap(m, 3), "")
     });
 
-    static YMD_SLASH: Lazy<Regex> =
-        Lazy::new(|| compile(r"\b(\d{4})/(\d{1,2})/(\d{1,2})\b(?!/\d)(?:\s+(?:року|р\.))?"));
+    static YMD_SLASH: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b(\d{4})/(\d{1,2})/(\d{1,2})\b(?!/\d)(?:\s+(?:року|р\.))?"));
     let text =
         try_read(&text, &YMD_SLASH, |m| dates.full_date_words(cap(m, 3), cap(m, 2), cap(m, 1), ""));
 
-    static DMY_DOT: Lazy<Regex> =
-        Lazy::new(|| compile(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b(?:\s+(?:року|р\.))?"));
+    static DMY_DOT: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b(?:\s+(?:року|р\.))?"));
     let text = try_read(&text, &DMY_DOT, |m| {
         dates.ordered_date_words(cap(m, 1), cap(m, 2), cap(m, 3), "")
     });
 
-    static DMY_SLASH: Lazy<Regex> =
-        Lazy::new(|| compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b(?!/\d)(?:\s+(?:року|р\.))?"));
+    static DMY_SLASH: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b(?!/\d)(?:\s+(?:року|р\.))?"));
     let text = try_read(&text, &DMY_SLASH, |m| {
         dates.slash_date_words(cap(m, 1), cap(m, 2), cap(m, 3), "")
     });
 
-    static ISO_DATE: Lazy<Regex> = Lazy::new(|| compile(r"\b(\d{4})-(\d{2})-(\d{2})\b"));
+    static ISO_DATE: LazyLock<Regex> = LazyLock::new(|| compile(r"\b(\d{4})-(\d{2})-(\d{2})\b"));
     let text = sub(&text, &ISO_DATE, |m| {
         let month = parse_i32(cap(m, 2));
         if !(1..=12).contains(&month) {
@@ -490,14 +502,15 @@ pub(crate) fn normalize_dates(
         format!(
             "{} {} {} року",
             dates.day_words(cap(m, 3), "nom_n"),
-            MONTHS_GENITIVE[(month - 1) as usize],
+            MONTHS_GENITIVE[usize::try_from(month - 1).unwrap_or_default()],
             ordinal_words(parse_u64(cap(m, 1)), "gen")
         )
     });
 
-    static YEAR_MONTH: Lazy<Regex> = Lazy::new(|| compile(r"\b(\d{4})-(0?[1-9]|1[0-2])(?!-?\d)"));
+    static YEAR_MONTH: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b(\d{4})-(0?[1-9]|1[0-2])(?!-?\d)"));
     let text = sub(&text, &YEAR_MONTH, |m| {
-        let month = parse_i32(cap(m, 2)) as usize;
+        let month = usize::try_from(parse_i32(cap(m, 2))).unwrap_or_default();
         format!(
             "{} {} року",
             MONTHS_NOMINATIVE[month - 1],
@@ -514,7 +527,7 @@ pub(crate) fn normalize_dates(
         )
     });
 
-    static NAMED_WITHOUT_YEAR: Lazy<Regex> = Lazy::new(|| {
+    static NAMED_WITHOUT_YEAR: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(&format!(r"\b(\d{{1,2}})\s+({MONTH_ANY})(?!\s+\d{{2,4}})(?![А-Яа-яЄєІіЇїҐґ])"))
     });
     let text = sub(&text, &NAMED_WITHOUT_YEAR, |m| {
@@ -525,7 +538,7 @@ pub(crate) fn normalize_dates(
         format!("{} {}", ordinal_words(day, "gen"), month_name(cap(m, 2)))
     });
 
-    static NAMED_MONTH_YEAR: Lazy<Regex> = Lazy::new(|| {
+    static NAMED_MONTH_YEAR: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(&format!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ])({MONTH_ANY})\s+(\d{{4}})(?:\s+(?:року|р\.)(?![А-Яа-яЄєІіЇїҐґ]))?(?!\d)"
         ))
@@ -547,7 +560,7 @@ pub(crate) fn normalize_dates(
         format!("{}{month} {} року", cap(m, 1), ordinal_words(parse_u64(cap(m, 3)), "gen"))
     });
 
-    static ABBREVIATED_YEAR_CONTEXT: Lazy<Regex> = Lazy::new(|| {
+    static ABBREVIATED_YEAR_CONTEXT: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"(^|[^А-Яа-яЄєІіЇїҐґ])(У|у|В|в|До|до|Від|від|Після|після)\s+(\d{3,4})\s*(?:р\.|рік)(?![а-яіїєґ])",
         )
@@ -564,7 +577,7 @@ pub(crate) fn normalize_dates(
         )
     });
 
-    static DECADE_WITHOUT_SUFFIX: Lazy<Regex> = Lazy::new(|| {
+    static DECADE_WITHOUT_SUFFIX: LazyLock<Regex> = LazyLock::new(|| {
         compile(r"(^|[^А-Яа-яЄєІіЇїҐґ])(У|у|В|в)\s+(\d{4})\s+роках(?![А-Яа-яЄєІіЇїҐґ])")
     });
     let text = sub(&text, &DECADE_WITHOUT_SUFFIX, |m| {
@@ -576,8 +589,9 @@ pub(crate) fn normalize_dates(
         )
     });
 
-    static YEAR_WITH_WORD: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d])(\d{3,4})\s+(році|року|роком|рік)(?![А-Яа-яЄєІіЇїҐґ])"));
+    static YEAR_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| {
+        compile(r"(^|[^\d])(\d{3,4})\s+(році|року|роком|рік)(?![А-Яа-яЄєІіЇїҐґ])")
+    });
     let text = sub(&text, &YEAR_WITH_WORD, |m| {
         let form = match cap(m, 3) {
             "рік" => "nom_m",
@@ -588,8 +602,8 @@ pub(crate) fn normalize_dates(
         format!("{}{} {}", cap(m, 1), ordinal_words(parse_u64(cap(m, 2)), form), cap(m, 3))
     });
 
-    static ORDINAL_YEAR_SUFFIX: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d])(\d{3,4})[-–—](го|му|й|м)(?![А-Яа-яЄєІіЇїҐґ])"));
+    static ORDINAL_YEAR_SUFFIX: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d])(\d{3,4})[-–—](го|му|й|м)(?![А-Яа-яЄєІіЇїҐґ])"));
     let text = sub(&text, &ORDINAL_YEAR_SUFFIX, |m| {
         let form = match cap(m, 3) {
             "го" => "gen",
@@ -600,8 +614,8 @@ pub(crate) fn normalize_dates(
         format!("{}{}", cap(m, 1), ordinal_words(parse_u64(cap(m, 2)), form))
     });
 
-    static YEAR_ABBREVIATION: Lazy<Regex> =
-        Lazy::new(|| compile(r"\b(\d{3,4})\s*р\.(?![а-яіїєґ])"));
+    static YEAR_ABBREVIATION: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b(\d{3,4})\s*р\.(?![а-яіїєґ])"));
     sub(&text, &YEAR_ABBREVIATION, |m| {
         format!("{} рік", ordinal_words(parse_u64(cap(m, 1)), "nom_m"))
     })
@@ -609,18 +623,18 @@ pub(crate) fn normalize_dates(
 
 /// Reads year spans, seasons and decades mentioned in prose.
 pub(crate) fn normalize_discourse_dates(text: &str) -> String {
-    static EXPLICIT_YEAR_SPAN: Lazy<Regex> = Lazy::new(|| {
+    static EXPLICIT_YEAR_SPAN: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ])((?:З|з|Із|із|Від|від))\s+(\d{4})\s+(?:по|до)\s+(\d{4})",
             r"\s*(?:рр?\.?|роки)?(?![\dА-Яа-яЄєІіЇїҐґ])"
         ))
     });
-    static SEASON_YEAR: Lazy<Regex> = Lazy::new(|| {
+    static SEASON_YEAR: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(
             r"(^|[^А-Яа-яЄєІіЇїҐґ])((?:весна|літо|осінь|зима))\s+(\d{3,4})(?![\dА-Яа-яЄєІіЇїҐґ])",
         )
     });
-    static EARLY_DECADE: Lazy<Regex> = Lazy::new(|| {
+    static EARLY_DECADE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ])((?:на\s+початку|у\s+середині|в\s+середині|наприкінці",
             r"|у\s+кінці|в\s+кінці))\s+(\d{4})-х(?![А-Яа-яЄєІіЇїҐґ])"
@@ -652,11 +666,11 @@ pub(crate) fn normalize_discourse_dates(text: &str) -> String {
 pub(crate) fn normalize_biblical_references(text: &str) -> String {
     const BOOKS: &str =
         "(?:Ісая|Єзекіїл|Буття|Вихід|Левит|Числа|Повторення Закону|Псалми|Матвій|Марко|Лука|Іван)";
-    static REFERENCE_GROUP: Lazy<Regex> =
-        Lazy::new(|| compile(&format!(r"\(({BOOKS})\s+([^)]{{3,120}})\)")));
-    static CHAPTER_VERSE: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d])(\d{1,3}):(\d{1,3})(?!\d)"));
-    static LABELLED_REFERENCE: Lazy<Regex> = Lazy::new(|| {
+    static REFERENCE_GROUP: LazyLock<Regex> =
+        LazyLock::new(|| compile(&format!(r"\(({BOOKS})\s+([^)]{{3,120}})\)")));
+    static CHAPTER_VERSE: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d])(\d{1,3}):(\d{1,3})(?!\d)"));
+    static LABELLED_REFERENCE: LazyLock<Regex> = LazyLock::new(|| {
         compile(&format!(r"(^|[^А-Яа-яЄєІіЇїҐґ])({BOOKS})\s+(\d{{1,3}}):(\d{{1,3}})(?!\d)"))
     });
 

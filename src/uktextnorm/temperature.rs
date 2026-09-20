@@ -1,11 +1,10 @@
 //! Temperature scales and how a quantity on one is read.
 
-use once_cell::sync::Lazy;
-
 use super::lexicon::Forms;
 use super::morphology::plural;
 use super::numbers::{signed_number_words, take_spoken_sign};
 use super::text::{lower_text, try_parse_u64};
+use std::sync::LazyLock;
 
 /// The temperature scales the normalizer recognizes.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -101,7 +100,7 @@ pub(crate) fn temperature_scale(scale: &str) -> Option<Scale> {
     }
     if lowered.contains("фаренгейт")
         || is(&["f", "°f", "℉"])
-        || (named_degrees && compact.ends_with("f"))
+        || (named_degrees && compact.ends_with('f'))
     {
         return Some(FAHRENHEIT);
     }
@@ -116,7 +115,7 @@ pub(crate) fn temperature_scale(scale: &str) -> Option<Scale> {
 }
 
 /// A regex fragment matching any way a temperature unit can be written.
-pub(crate) static TEMPERATURE_UNIT_PATTERN: Lazy<String> = Lazy::new(|| {
+pub(crate) static TEMPERATURE_UNIT_PATTERN: LazyLock<String> = LazyLock::new(|| {
     const DEGREE_SYMBOL: &str = concat!(
         r"(?:°\s*(?:Celsius|celsius|Fahrenheit|fahrenheit|C|c|С|с|F|f|N|n|D(?:e|E)|d[eE]",
         r"|R(?:a|A|e|E|é|É|ø|Ø|ō|Ō)?|r(?:a|e|é|ø|ō)?)|℃|℉)"

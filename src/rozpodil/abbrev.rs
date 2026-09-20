@@ -1,7 +1,7 @@
 //! Abbreviation tables consulted when deciding whether a period ends a sentence.
 
-use once_cell::sync::Lazy;
 use std::collections::HashSet;
+use std::sync::LazyLock;
 
 fn set(values: &[&'static str]) -> HashSet<&'static str> {
     values.iter().copied().collect()
@@ -9,7 +9,7 @@ fn set(values: &[&'static str]) -> HashSet<&'static str> {
 
 /// Abbreviations that normally follow the value they qualify (`5 тис.`).
 #[rustfmt::skip]
-pub(crate) static TRAILING: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+pub(crate) static TRAILING: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     set(&[
         "тис", "млн", "млрд", "грн", "коп", "проц", "га", "кг", "г", "т", "куб", "кв", "км", "м",
         "см", "мм", "л", "год", "хв", "сек", "ст", "р", "рр", "с", "к", "руб", "крб", "co", "corp",
@@ -21,7 +21,7 @@ pub(crate) static TRAILING: Lazy<HashSet<&'static str>> = Lazy::new(|| {
 
 /// Abbreviations that normally precede what they qualify (`вул. Шевченка`).
 #[rustfmt::skip]
-pub(crate) static LEADING: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+pub(crate) static LEADING: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     set(&[
         "ст", "укр", "англ", "нім", "фр", "італ", "грец", "лат", "mr", "mrs", "ms", "dr", "vs",
         "св", "проф", "акад", "доц", "канд", "д-р", "ред", "гр", "ім", "тов", "п", "пп", "ч", "чч",
@@ -39,22 +39,22 @@ pub(crate) static LEADING: Lazy<HashSet<&'static str>> = Lazy::new(|| {
 });
 
 #[rustfmt::skip]
-static OTHER: Lazy<HashSet<&'static str>> =
-    Lazy::new(|| set(&["скор", "рис", "винят", "прим", "заст", "жарт"]));
+static OTHER: LazyLock<HashSet<&'static str>> =
+    LazyLock::new(|| set(&["скор", "рис", "винят", "прим", "заст", "жарт"]));
 
 /// Abbreviations that are really initials, so a period never ends the sentence.
 #[rustfmt::skip]
-pub(crate) static INITIALS: Lazy<HashSet<&'static str>> = Lazy::new(|| set(&["дж", "ed"]));
+pub(crate) static INITIALS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| set(&["дж", "ed"]));
 
 /// Two-word abbreviations where the period always joins (`і т. д.`).
 #[rustfmt::skip]
-pub(crate) static LEADING_PAIRS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+pub(crate) static LEADING_PAIRS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     set(&["т е", "т к", "т н", "и о", "к н", "к п", "п н", "к т", "л д", "і т", "ст ст", "а с"])
 });
 
 /// Two-word abbreviations where the period joins if the next token can follow one.
 #[rustfmt::skip]
-pub(crate) static PAIRS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+pub(crate) static PAIRS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     set(&[
         "т п", "т д", "у е", "н э", "p m", "a m", "с г", "р х", "с ш", "з д", "л с", "ч т", "т е",
         "т к", "т н", "и о", "к н", "к п", "п н", "к т", "л д", "ед ч", "мн ч", "повел накл",

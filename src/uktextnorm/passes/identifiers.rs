@@ -1,7 +1,7 @@
 //! Network addresses, geographic coordinates and structured identifiers.
 
 use fancy_regex::Regex;
-use once_cell::sync::Lazy;
+use std::fmt::Write as _;
 
 use crate::uktextnorm::lexicon::Forms;
 use crate::uktextnorm::morphology::plural;
@@ -12,6 +12,7 @@ use crate::uktextnorm::numbers::{
 use crate::uktextnorm::re::{cap, compile, compile_i, matched, sub, sub_ctx, whole};
 use crate::uktextnorm::readers::{read_structured_identifier, spell_identifier_letters};
 use crate::uktextnorm::text::{is_latin, is_uk, lower_text, parse_i32, parse_u64};
+use std::sync::LazyLock;
 
 const DEGREE_FORMS: Forms =
     Forms { one: "градус", few: "градуси", many: "градусів" };
@@ -118,29 +119,29 @@ fn preceded_by_version_label(prefix: &str) -> bool {
 
 /// Reads MAC addresses, IPv4 and IPv6 addresses with optional prefix and port.
 pub(crate) fn normalize_ip_addresses(text: &str) -> String {
-    static CISCO_MAC: Lazy<Regex> = Lazy::new(|| {
+    static CISCO_MAC: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[^0-9A-Fa-f])([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})\.([0-9A-Fa-f]{2})",
             r"([0-9A-Fa-f]{2})\.([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})(?![0-9A-Fa-f])"
         ))
     });
-    static MAC: Lazy<Regex> = Lazy::new(|| {
+    static MAC: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[^0-9A-Fa-f])([0-9A-Fa-f]{2})[:-]([0-9A-Fa-f]{2})[:-]([0-9A-Fa-f]{2})[:-]",
             r"([0-9A-Fa-f]{2})[:-]([0-9A-Fa-f]{2})[:-]([0-9A-Fa-f]{2})(?![0-9A-Fa-f])"
         ))
     });
-    static IPV4: Lazy<Regex> = Lazy::new(|| {
+    static IPV4: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[^\d.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})",
             r"(?:/(\d{1,3}))?(?::(\d{1,5}))?(?![\d:/]|\.\d)"
         ))
     });
-    static BRACKETED_IPV6_PORT: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^0-9A-Fa-f:])\[([0-9A-Fa-f:]+)\]:(\d{1,5})(?!\d)"));
-    static BRACKETED_IPV6: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^0-9A-Fa-f:])\[([0-9A-Fa-f:]+)\](?!:)"));
-    static IPV6: Lazy<Regex> = Lazy::new(|| {
+    static BRACKETED_IPV6_PORT: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^0-9A-Fa-f:])\[([0-9A-Fa-f:]+)\]:(\d{1,5})(?!\d)"));
+    static BRACKETED_IPV6: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^0-9A-Fa-f:])\[([0-9A-Fa-f:]+)\](?!:)"));
+    static IPV6: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"(^|[^0-9A-Fa-f:])((?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4})(?:/(\d{1,3}))?(?![0-9A-Fa-f:/])",
         )
@@ -166,14 +167,14 @@ pub(crate) fn normalize_ip_addresses(text: &str) -> String {
             if prefix_length > 32 {
                 return whole(m).to_owned();
             }
-            out.push_str(&format!(" префікс {}", number_to_words(prefix_length)));
+            let _ = write!(out, " префікс {}", number_to_words(prefix_length));
         }
         if matched(m, 7) {
             let port = parse_u64(cap(m, 7));
             if port > 65535 {
                 return whole(m).to_owned();
             }
-            out.push_str(&format!(" порт {}", number_to_words(port)));
+            let _ = write!(out, " порт {}", number_to_words(port));
         }
         out
     });
@@ -207,7 +208,7 @@ pub(crate) fn normalize_ip_addresses(text: &str) -> String {
             if prefix_length > 128 {
                 return whole(m).to_owned();
             }
-            out.push_str(&format!(" префікс {}", number_to_words(prefix_length)));
+            let _ = write!(out, " префікс {}", number_to_words(prefix_length));
         }
         out
     })
@@ -278,43 +279,43 @@ fn coordinate_hemisphere(marker: &str) -> String {
 
 /// Reads geographic coordinates in decimal, degrees-minutes and DMS forms.
 pub(crate) fn normalize_coordinates(text: &str) -> String {
-    static GEO_URI: Lazy<Regex> = Lazy::new(|| {
+    static GEO_URI: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ])((?:geo|координати)\s*[:=]\s*)",
             r"((?:[+\-]|−)?\d{1,2}(?:\.\d+)?)\s*[,;]\s*((?:[+\-]|−)?\d{1,3}(?:\.\d+)?)",
             r"(?:\s*[,;]\s*((?:[+\-]|−)?\d+(?:\.\d+)?))?"
         ))
     });
-    static LABELLED_PAIR: Lazy<Regex> = Lazy::new(|| {
+    static LABELLED_PAIR: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^A-Za-z])(?:lat(?:itude)?|широта)\s*[:=]\s*((?:[+\-]|−)?\d{1,2}(?:[.,]\d+)?)",
             r"\s*[,; ]+\s*(?:lon(?:gitude)?|довгота)\s*[:=]\s*((?:[+\-]|−)?\d{1,3}(?:[.,]\d+)?)"
         ))
     });
-    static GOVERNED_MARKER: Lazy<Regex> = Lazy::new(|| {
+    static GOVERNED_MARKER: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[\s(\[{:,;])((?:Від|від|До|до))\s+(\d{1,3})\s*°\s*([NSEW])",
             r"(?:\s+(?:широти|довготи))?(?![A-Za-zА-Яа-яЄєІіЇїҐґ])"
         ))
     });
-    static GOVERNED_AXIS: Lazy<Regex> = Lazy::new(|| {
+    static GOVERNED_AXIS: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(
             r"(^|[\s(\[{:,;])((?:Від|від|До|до))\s+(\d{1,3})\s*°\s*(широти|довготи)(?![А-Яа-яЄєІіЇїҐґ])",
         )
     });
-    static DECIMAL_MINUTES: Lazy<Regex> = Lazy::new(|| {
+    static DECIMAL_MINUTES: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^\d])(\d{1,3})\s*°\s*(\d{1,2})[.,](\d+)\s*(?:′|')\s*",
             r"((?:N|S|E|W)|(?:пн|пд|сх|зх)\.?\s*(?:ш|д)\.?)"
         ))
     });
-    static DECIMAL: Lazy<Regex> = Lazy::new(|| {
+    static DECIMAL: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^\d.,])((?:[+\-])?)(\d{1,3})(?:(?:[.,](\d+)\s*(?:°)?)|(?:°\s*))\s*([NSEW])",
             r"(?:\s+(?:широт[а-яіїєґ]*|довгот[а-яіїєґ]*))?(?![A-Za-zА-Яа-яЄєІіЇїҐґ])"
         ))
     });
-    static DMS: Lazy<Regex> = Lazy::new(|| {
+    static DMS: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r#"(^|[^\d])(\d{1,3})\s*°\s*(\d{1,2})\s*(?:′|')\s*(?:(\d{1,2})\s*(?:″|")\s*)?"#,
             r"((?:N|S|E|W)|(?:пн|пд|сх|зх)\.?\s*(?:ш|д)\.?",
@@ -340,7 +341,7 @@ pub(crate) fn normalize_coordinates(text: &str) -> String {
             if west { "західної" } else { "східної" }
         );
         if matched(m, 5) {
-            out.push_str(&format!(", висота {} метрів", signed_quantity(cap(m, 5))));
+            let _ = write!(out, ", висота {} метрів", signed_quantity(cap(m, 5)));
         }
         out
     });
@@ -400,8 +401,8 @@ pub(crate) fn normalize_coordinates(text: &str) -> String {
     });
 
     let text = sub(&text, &DECIMAL_MINUTES, |m| {
-        let degrees = parse_i32(cap(m, 2));
-        let minutes = parse_i32(cap(m, 3));
+        let degrees = parse_u64(cap(m, 2));
+        let minutes = parse_u64(cap(m, 3));
         let marker = lower_text(cap(m, 5));
         let latitude =
             marker == "n" || marker == "s" || marker.starts_with("пн") || marker.starts_with("пд");
@@ -419,8 +420,8 @@ pub(crate) fn normalize_coordinates(text: &str) -> String {
         format!(
             "{}{} {} {fraction} хвилини {}",
             cap(m, 1),
-            number_to_words(degrees as u64),
-            plural(degrees as u64, &DEGREE_FORMS),
+            number_to_words(degrees),
+            plural(degrees, &DEGREE_FORMS),
             coordinate_hemisphere(cap(m, 5))
         )
     });
@@ -428,7 +429,7 @@ pub(crate) fn normalize_coordinates(text: &str) -> String {
     // A bare integer followed by N/S/E/W is too ambiguous: N, S and W are also
     // common SI symbols. Require either a degree sign or a decimal value.
     let text = sub(&text, &DECIMAL, |m| {
-        let degrees = parse_i32(cap(m, 3));
+        let degrees = parse_u64(cap(m, 3));
         let marker = lower_text(cap(m, 5));
         let latitude = marker == "n"
             || marker == "s"
@@ -443,13 +444,13 @@ pub(crate) fn normalize_coordinates(text: &str) -> String {
         let (value, unit) = if matched(m, 4) {
             (decimal_to_words_or_digits(cap(m, 3), cap(m, 4)), "градуса".to_owned())
         } else {
-            (number_to_words(degrees as u64), plural(degrees as u64, &DEGREE_FORMS).to_owned())
+            (number_to_words(degrees), plural(degrees, &DEGREE_FORMS).to_owned())
         };
         format!("{}{value} {unit} {}", cap(m, 1), coordinate_hemisphere(cap(m, 5)))
     });
 
     sub(&text, &DMS, |m| {
-        let degrees = parse_i32(cap(m, 2));
+        let degrees = parse_u64(cap(m, 2));
         let marker = lower_text(cap(m, 5));
         let latitude = marker == "n"
             || marker == "s"
@@ -464,7 +465,7 @@ pub(crate) fn normalize_coordinates(text: &str) -> String {
         }
         let mut parts = vec![
             number_words_for_gender(parse_u64(cap(m, 2)), 'm'),
-            plural(degrees as u64, &DEGREE_FORMS).to_owned(),
+            plural(degrees, &DEGREE_FORMS).to_owned(),
         ];
         if matched(m, 3) {
             let minutes = parse_u64(cap(m, 3));
@@ -551,7 +552,7 @@ pub(crate) fn normalize_identifiers(text: &str) -> String {
     const UKRAINIAN_LETTER: &str =
         r"(?:А|Б|В|Г|Ґ|Д|Е|Є|Ж|З|И|І|Ї|Й|К|Л|М|Н|О|П|Р|С|Т|У|Ф|Х|Ц|Ч|Ш|Щ|Ю|Я)";
 
-    static TECHNICAL_STANDARD: Lazy<Regex> = Lazy::new(|| {
+    static TECHNICAL_STANDARD: LazyLock<Regex> = LazyLock::new(|| {
         let standard_atom = format!("(?:[A-Za-z0-9]+|{UKRAINIAN_LETTER})");
         compile_i(&format!(
             concat!(
@@ -561,49 +562,49 @@ pub(crate) fn normalize_identifiers(text: &str) -> String {
             STANDARD_LABEL, UKRAINIAN_LETTER, standard_atom
         ))
     });
-    static SLASH: Lazy<Regex> = Lazy::new(|| compile(r"\s*/\s*"));
+    static SLASH: LazyLock<Regex> = LazyLock::new(|| compile(r"\s*/\s*"));
     // IEEE 802 revisions also occur without the "IEEE" label. They are
     // identifiers, not decimals, ranges or unit-bearing measurements (802.16m).
-    static BARE_IEEE_REVISION: Lazy<Regex> = Lazy::new(|| {
+    static BARE_IEEE_REVISION: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(
             r"(^|[^A-Za-z0-9.])(802\.\d{1,2}(?:[A-Za-z]{1,3})?(?:(?:-|–|—)\d{4})?)(?![A-Za-z0-9]|\.\d)",
         )
     });
-    static UUID: Lazy<Regex> = Lazy::new(|| {
+    static UUID: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"\b([0-9A-Fa-f]{8})-([0-9A-Fa-f]{4})-([0-9A-Fa-f]{4})-([0-9A-Fa-f]{4})-([0-9A-Fa-f]{12})\b",
         )
     });
-    static COMPACT_UUID: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\bUUID\s*[:=]?\s*([0-9A-Fa-f]{32})\b"));
-    static LABELLED_HASH: Lazy<Regex> = Lazy::new(|| {
+    static COMPACT_UUID: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\bUUID\s*[:=]?\s*([0-9A-Fa-f]{32})\b"));
+    static LABELLED_HASH: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(
             r"\b((?:SHA-?(?:1|224|256|384|512)|SHA3-?(?:256|512)|BLAKE2[bs]|MD5))\s*[:=]?\s*([0-9A-Fa-f]{16,128})\b",
         )
     });
-    static ISBN: Lazy<Regex> = Lazy::new(|| {
+    static ISBN: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(
             r"\b(ISBN(?:-1[03])?)\s*[:№#]?\s*((?:97[89][ -]?)?[0-9Xx](?:[ -]?[0-9Xx]){8,12})\b",
         )
     });
-    static ISSN: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\b(ISSN(?:-L)?)\s*[:№#]?\s*(\d{4})[ -]?(\d{3}[\dXx])\b"));
-    static VIN: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\b(VIN)\s*[:№#]?\s*([A-HJ-NPR-Z0-9]{17})\b"));
-    static SWIFT: Lazy<Regex> = Lazy::new(|| {
+    static ISSN: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\b(ISSN(?:-L)?)\s*[:№#]?\s*(\d{4})[ -]?(\d{3}[\dXx])\b"));
+    static VIN: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\b(VIN)\s*[:№#]?\s*([A-HJ-NPR-Z0-9]{17})\b"));
+    static SWIFT: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(r"\b((?:SWIFT|BIC))\s*[:№#]?\s*([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b")
     });
-    static IBAN: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\bUA\s*(\d{2})(?:\s*(\d{4})){6}\s*(\d{1})\b"));
-    static FOREIGN_IBAN: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\b([A-Z]{2})[ -]?(\d{2})((?:[ -]?[A-Z0-9]){11,30})\b"));
-    static EDRPOU: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"(ЄДРПОУ|ЄДР|код\s+ЄДРПОУ)\s*[:№#]?\s*(\d{8})\b"));
-    static TAX_ID: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"(РНОКПП|ІПН|податковий\s+номер)\s*[:№#]?\s*(\d{10})\b"));
-    static POSTCODE: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"(індекс|поштовий\s+індекс)\s*[:№#]?\s*(\d{5})\b"));
-    static LEGAL_NUMBER: Lazy<Regex> = Lazy::new(|| {
+    static IBAN: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\bUA\s*(\d{2})(?:\s*(\d{4})){6}\s*(\d{1})\b"));
+    static FOREIGN_IBAN: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\b([A-Z]{2})[ -]?(\d{2})((?:[ -]?[A-Z0-9]){11,30})\b"));
+    static EDRPOU: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"(ЄДРПОУ|ЄДР|код\s+ЄДРПОУ)\s*[:№#]?\s*(\d{8})\b"));
+    static TAX_ID: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"(РНОКПП|ІПН|податковий\s+номер)\s*[:№#]?\s*(\d{10})\b"));
+    static POSTCODE: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"(індекс|поштовий\s+індекс)\s*[:№#]?\s*(\d{5})\b"));
+    static LEGAL_NUMBER: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ])((?:справа|Справа|справі|Справі|справу|Справу",
             r"|провадження|Провадження|закон|Закон|закону|Закону|наказ|Наказ|постанова|Постанова",
@@ -612,30 +613,31 @@ pub(crate) fn normalize_identifiers(text: &str) -> String {
             r"(?:\s+[^№\s]+)?\s*)№\s*([^\s,.;:!?()]+)"
         ))
     });
-    static ERDR: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ])(ЄРДР\.?\s*)№?\s*(\d{8,20})(?!\d)"));
-    static PASSPORT: Lazy<Regex> = Lazy::new(|| {
+    static ERDR: LazyLock<Regex> = LazyLock::new(|| {
+        compile_i(r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ])(ЄРДР\.?\s*)№?\s*(\d{8,20})(?!\d)")
+    });
+    static PASSPORT: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ])(паспорт\s+)([^\s\d]+)\s*(\d{6,9})(?!\d)")
     });
-    static BANK_CARD: Lazy<Regex> = Lazy::new(|| {
+    static BANK_CARD: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ])((?:картка|картку|карта|карту)\s+)(\d{4})",
             r"[\s-]+(?:\*{4}|xxxx|XXXX)[\s-]+(?:\*{4}|xxxx|XXXX)[\s-]+(\d{4})(?!\d)"
         ))
     });
-    static FULL_BANK_CARD: Lazy<Regex> = Lazy::new(|| {
+    static FULL_BANK_CARD: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ])((?:картка|картку|карта|карту)\s+)",
             r"(\d{4})[\s-]+(\d{4})[\s-]+(\d{4})[\s-]+(\d{4})(?!\d)"
         ))
     });
-    static VARIABLE_BANK_CARD: Lazy<Regex> = Lazy::new(|| {
+    static VARIABLE_BANK_CARD: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ])((?:номер\s+картки|картка|картку|картки|карта|карту)\s+)",
             r"(\d(?:[ -]?\d){11,18})(?!\d)"
         ))
     });
-    static PLATE: Lazy<Regex> = Lazy::new(|| {
+    static PLATE: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[\s,.;:!?()])((?:А|В|Е|І|К|М|Н|О|Р|С|Т|Х){2})\s*(\d{4})\s*",
             r"((?:А|В|Е|І|К|М|Н|О|Р|С|Т|Х){2})(?![А-Яа-яЄєІіЇїҐґ])"

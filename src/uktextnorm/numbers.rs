@@ -75,6 +75,7 @@ pub fn number_to_words_digit_by_digit(digits: &str) -> String {
 /// assert_eq!(number_to_words(1_002), "тисяча два");
 /// assert_eq!(number_to_words(2_002), "дві тисячі два");
 /// ```
+#[must_use]
 pub fn number_to_words(n: u64) -> String {
     if n == 0 {
         return "нуль".to_owned();
@@ -119,7 +120,7 @@ pub fn number_to_words(n: u64) -> String {
             }
         }
         words.extend(chunk);
-        words.push(plural(count as u64, forms).to_owned());
+        words.push(plural(u64::from(count), forms).to_owned());
     }
     words.extend(under_thousand((n % 1000) as u32));
     join(&words)
@@ -200,6 +201,7 @@ impl GrammaticalCase {
 /// assert_eq!(number_to_ordinal_words(1, OrdinalForm::NomM), "перший");
 /// assert_eq!(number_to_ordinal_words(3, OrdinalForm::Gen), "третього");
 /// ```
+#[must_use]
 pub fn number_to_ordinal_words(n: u64, form: OrdinalForm) -> String {
     ordinal_words(n, form.as_str())
 }
@@ -226,6 +228,7 @@ pub(crate) fn ordinal_words(n: u64, form: &str) -> String {
 /// # use normalize_uk::uktextnorm::{number_to_words_case, GrammaticalCase};
 /// assert_eq!(number_to_words_case(2, GrammaticalCase::Genitive), "двох");
 /// ```
+#[must_use]
 pub fn number_to_words_case(n: u64, case: GrammaticalCase) -> String {
     let index = case.index();
     let words: Vec<String> = split_words(&number_to_words(n))

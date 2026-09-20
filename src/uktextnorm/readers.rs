@@ -1,7 +1,7 @@
 //! Readers that turn identifiers, amounts and phone numbers into words.
 
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use super::lexicon::{self, FinanceUnit, Gender, Unit};
 use super::morphology::{feminine_last, plural, plural_of, PRONUNCIATION};
@@ -14,33 +14,34 @@ use super::validation::{roman_to_int, valid_roman};
 use super::PhoneStyle;
 
 /// Units of measure keyed by their written abbreviation.
-pub(crate) static MEASUREMENTS: Lazy<HashMap<&'static str, &'static Unit>> =
-    Lazy::new(|| lexicon::UNITS.iter().map(|u| (u.key, u)).collect());
+pub(crate) static MEASUREMENTS: LazyLock<HashMap<&'static str, &'static Unit>> =
+    LazyLock::new(|| lexicon::UNITS.iter().map(|u| (u.key, u)).collect());
 
 /// Finance and cryptocurrency tickers keyed by code.
-pub(crate) static FINANCE_UNITS: Lazy<HashMap<&'static str, &'static FinanceUnit>> =
-    Lazy::new(|| lexicon::FINANCE_UNITS.iter().map(|u| (u.code, u)).collect());
+pub(crate) static FINANCE_UNITS: LazyLock<HashMap<&'static str, &'static FinanceUnit>> =
+    LazyLock::new(|| lexicon::FINANCE_UNITS.iter().map(|u| (u.code, u)).collect());
 
 /// Counted nouns keyed by surface form.
-pub(crate) static COUNTED_NOUNS: Lazy<HashMap<&'static str, &'static lexicon::CountedNoun>> =
-    Lazy::new(|| lexicon::COUNTED_NOUNS.iter().map(|n| (n.key, n)).collect());
+pub(crate) static COUNTED_NOUNS: LazyLock<HashMap<&'static str, &'static lexicon::CountedNoun>> =
+    LazyLock::new(|| lexicon::COUNTED_NOUNS.iter().map(|n| (n.key, n)).collect());
 
 /// Oblique counted-noun forms mapped to their case (`instr` or `prep`).
-pub(crate) static COUNTED_OBLIQUE: Lazy<HashMap<&'static str, &'static str>> =
-    Lazy::new(|| lexicon::COUNTED_OBLIQUE.iter().copied().collect());
+pub(crate) static COUNTED_OBLIQUE: LazyLock<HashMap<&'static str, &'static str>> =
+    LazyLock::new(|| lexicon::COUNTED_OBLIQUE.iter().copied().collect());
 
 /// Latin words with a preferred Ukrainian reading: brands first, then the
 /// general English word list, which never overrides a brand.
-pub(crate) static ENGLISH_WORDS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
-    let mut out: HashMap<&str, &str> = HashMap::new();
-    for &(latin, cyrillic) in lexicon::BRANDS.iter().chain(lexicon::ENGLISH_WORDS.iter()) {
-        out.entry(latin).or_insert(cyrillic);
-    }
-    out
-});
+pub(crate) static ENGLISH_WORDS: LazyLock<HashMap<&'static str, &'static str>> =
+    LazyLock::new(|| {
+        let mut out: HashMap<&str, &str> = HashMap::new();
+        for &(latin, cyrillic) in lexicon::BRANDS.iter().chain(lexicon::ENGLISH_WORDS.iter()) {
+            out.entry(latin).or_insert(cyrillic);
+        }
+        out
+    });
 
 /// Abbreviations keyed by their whitespace-free lowercase form.
-pub(crate) static ABBREVIATIONS: Lazy<HashMap<String, &'static str>> = Lazy::new(|| {
+pub(crate) static ABBREVIATIONS: LazyLock<HashMap<String, &'static str>> = LazyLock::new(|| {
     lexicon::ABBREVIATIONS
         .iter()
         .map(|&(key, expansion)| (super::text::compact_spaces_lower(key), expansion))
@@ -116,7 +117,7 @@ pub(crate) fn finance_amount_words_parts(
 
 /// How each Latin letter is named when an identifier is spelled out.
 #[rustfmt::skip]
-static LATIN_LETTERS: Lazy<HashMap<char, &'static str>> = Lazy::new(|| {
+static LATIN_LETTERS: LazyLock<HashMap<char, &'static str>> = LazyLock::new(|| {
     [
         ('A', "ей"), ('B', "бі"), ('C', "сі"), ('D', "ді"), ('E', "і"), ('F', "еф"),
         ('G', "джі"), ('H', "ейч"), ('I', "ай"), ('J', "джей"), ('K', "кей"), ('L', "ел"),

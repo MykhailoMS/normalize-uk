@@ -2,8 +2,9 @@
 //! nouns, ordinal-triggering nouns and numeric compounds.
 
 use fancy_regex::Regex;
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::fmt::Write as _;
+use std::sync::LazyLock;
 
 use crate::uktextnorm::lexicon::Gender;
 use crate::uktextnorm::morphology::{plural, CASE_FORMS, COMPOUND_PREFIX_FORMS};
@@ -30,7 +31,7 @@ fn gender_char(gender: Gender) -> char {
 
 /// The case each preposition puts the following number into.
 #[rustfmt::skip]
-static PREPOSITION_CASE: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+static PREPOSITION_CASE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     [
         ("близько", "gen"), ("менше", "gen"), ("більше", "gen"), ("серед", "gen"),
         ("від", "gen"), ("до", "gen"), ("із", "gen"), ("з", "instr"), ("без", "gen"),
@@ -44,23 +45,23 @@ static PREPOSITION_CASE: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|
 
 /// Puts numbers into the case the governing preposition requires.
 pub(crate) fn normalize_case_context(text: &str) -> String {
-    static PONAD_QUANTITY: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^А-Яа-яЄєІіЇїҐґ])(Понад|понад)\s+(\d+)(?!\d)"));
-    static QUANTIFIED_GENITIVE: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[\s(\[{:;,.!?])((?:З|з))\s+(\d+)\s+([^\s,.;:!?]+)"));
-    static COMPARATIVE_GENITIVE: Lazy<Regex> = Lazy::new(|| {
+    static PONAD_QUANTITY: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^А-Яа-яЄєІіЇїҐґ])(Понад|понад)\s+(\d+)(?!\d)"));
+    static QUANTIFIED_GENITIVE: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[\s(\[{:;,.!?])((?:З|з))\s+(\d+)\s+([^\s,.;:!?]+)"));
+    static COMPARATIVE_GENITIVE: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"(^|[^А-Яа-яЄєІіЇїҐґ])(Після|після|До|до|Від|від|Без|без)\s+(більш|менш)\s+ніж\s+(\d+)(?!\d)",
         )
     });
-    static INSTRUMENTAL: Lazy<Regex> = Lazy::new(|| {
+    static INSTRUMENTAL: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"(^|[^А-Яа-яЄєІіЇїҐґ])([Зз])\s+(\d+)\s+([а-яєіїґ']{3,}(?:ами|ями|ма))(?![А-Яа-яЄєІіЇїҐґ])",
         )
     });
-    static BEFORE_LOCATIVE_ADJECTIVE: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[\s(\[{:;,.!?])(У|у|В|в|На|на)\s+(\d+)\s+([^\s,.;:!?]+)"));
-    static OBLIQUE: Lazy<Regex> = Lazy::new(|| {
+    static BEFORE_LOCATIVE_ADJECTIVE: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[\s(\[{:;,.!?])(У|у|В|в|На|на)\s+(\d+)\s+([^\s,.;:!?]+)"));
+    static OBLIQUE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(&format!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ])(У|у|В|в|На|на)\s+(\d+)\s+({})(?![А-Яа-яЄєІіЇїҐґ])",
             regex_alternation(COUNTED_OBLIQUE.keys().copied())
@@ -140,7 +141,7 @@ pub(crate) fn normalize_case_context(text: &str) -> String {
             let Some(unit) = MEASUREMENTS.get(cap(m, 4)) else {
                 return whole(m).to_owned();
             };
-            out.push_str(&format!(" {}{}", unit.forms.many, cap(m, 5)));
+            let _ = write!(out, " {}{}", unit.forms.many, cap(m, 5));
         }
         out
     });
@@ -217,10 +218,11 @@ pub(crate) fn normalize_counted_nouns(text: &str) -> String {
 
 /// Reads a number as an ordinal when the noun after it calls for one.
 pub(crate) fn normalize_ordinal_triggers(text: &str) -> String {
-    static GENITIVE_CLASS: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"(^|[^\dА-Яа-яЄєІіЇїҐґ])(\d{1,2})\s+(класу)(?![А-Яа-яЄєІіЇїҐґ])"));
+    static GENITIVE_CLASS: LazyLock<Regex> = LazyLock::new(|| {
+        compile_i(r"(^|[^\dА-Яа-яЄєІіЇїҐґ])(\d{1,2})\s+(класу)(?![А-Яа-яЄєІіЇїҐґ])")
+    });
     #[rustfmt::skip]
-    static TRIGGERS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+    static TRIGGERS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
         [
             ("місце", "nom_n"), ("село", "nom_n"), ("місто", "nom_n"), ("століття", "nom_n"),
             ("ст", "nom_n"), ("клас", "nom_m"), ("курс", "nom_m"), ("раунд", "nom_m"),
@@ -231,7 +233,7 @@ pub(crate) fn normalize_ordinal_triggers(text: &str) -> String {
         .into_iter()
         .collect()
     });
-    static RE: Lazy<Regex> = Lazy::new(|| {
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^\d])(\d{1,4})\s+(місце|село|місто|століття|ст|клас|курс|раунд|сезон|етап",
             r"|тур|том|під'їзд|поверх|група|квартира|сторінка)(?![А-Яа-яЄєІіЇїҐґ])"
@@ -258,7 +260,7 @@ pub(crate) fn normalize_ordinal_triggers(text: &str) -> String {
 
 /// Turns `5-поверховий` into `п'ятиповерховий`.
 pub(crate) fn normalize_compounds(text: &str) -> String {
-    static RE: Lazy<Regex> = Lazy::new(|| {
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[^\d])(\d+)-(?!(?:ший|ими|им|ім|ою|ій|ше|ша|ге|га|тє|тя|го|му|й|м|а|у|е|х)",
             r"(?:[^А-Яа-яЄєІіЇїҐґ]|$))([^0-9A-Za-z\s,.;:!?()]+)"

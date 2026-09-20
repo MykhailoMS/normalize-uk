@@ -1,7 +1,7 @@
 //! Inflection tables and the rules that pick a form.
 
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use super::lexicon::Forms;
 
@@ -47,7 +47,7 @@ fn map(pairs: &[(&'static str, &'static str)]) -> HashMap<&'static str, &'static
 
 /// Cardinal number words mapped to their ordinal stems.
 #[rustfmt::skip]
-pub(crate) static CARDINAL_TO_ORDINAL: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+pub(crate) static CARDINAL_TO_ORDINAL: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     map(&[
         ("нуль", "нульовий"), ("один", "перший"), ("одна", "перший"), ("два", "другий"),
         ("дві", "другий"), ("три", "третій"), ("чотири", "четвертий"), ("п'ять", "п'ятий"),
@@ -68,7 +68,7 @@ pub(crate) static CARDINAL_TO_ORDINAL: Lazy<HashMap<&'static str, &'static str>>
 
 /// Genitive, dative, instrumental and locative forms of the cardinal words.
 #[rustfmt::skip]
-pub(crate) static CASE_FORMS: Lazy<HashMap<&'static str, [&'static str; 4]>> = Lazy::new(|| {
+pub(crate) static CASE_FORMS: LazyLock<HashMap<&'static str, [&'static str; 4]>> = LazyLock::new(|| {
     [
         ("нуль", ["нуля", "нулю", "нулем", "нулі"]),
         ("один", ["одного", "одному", "одним", "одному"]),
@@ -125,7 +125,7 @@ pub(crate) static CASE_FORMS: Lazy<HashMap<&'static str, [&'static str; 4]>> = L
 
 /// Combining forms used when a number joins a compound word (`двоповерховий`).
 #[rustfmt::skip]
-pub(crate) static COMPOUND_PREFIX_FORMS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+pub(crate) static COMPOUND_PREFIX_FORMS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     map(&[
         ("один", "одно"), ("одна", "одно"), ("два", "дво"), ("дві", "дво"), ("три", "три"),
         ("чотири", "чотири"), ("п'ять", "п'яти"), ("шість", "шести"), ("сім", "семи"),
@@ -146,7 +146,7 @@ pub(crate) static COMPOUND_PREFIX_FORMS: Lazy<HashMap<&'static str, &'static str
 
 /// How each Cyrillic letter is named when an acronym is spelled out.
 #[rustfmt::skip]
-pub(crate) static PRONUNCIATION: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+pub(crate) static PRONUNCIATION: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     map(&[
         ("А", "а"), ("Б", "бе"), ("В", "ве"), ("Г", "ге"), ("Ґ", "ґе"), ("Д", "де"), ("Е", "е"),
         ("Є", "є"), ("Ж", "же"), ("З", "зе"), ("И", "и"), ("І", "і"), ("Ї", "ї"), ("Й", "йот"),
@@ -158,7 +158,7 @@ pub(crate) static PRONUNCIATION: Lazy<HashMap<&'static str, &'static str>> = Laz
 
 /// Latin letter sequences and their Cyrillic transliteration, longest first.
 #[rustfmt::skip]
-pub(crate) static TRANSLITERATION: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+pub(crate) static TRANSLITERATION: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     map(&[
         ("a", "а"), ("b", "б"), ("c", "к"), ("d", "д"), ("e", "е"), ("f", "ф"), ("g", "г"),
         ("h", "г"), ("i", "і"), ("j", "дж"), ("k", "к"), ("l", "л"), ("m", "м"), ("n", "н"),
@@ -171,7 +171,7 @@ pub(crate) static TRANSLITERATION: Lazy<HashMap<&'static str, &'static str>> = L
 
 /// Hard-stem adjective endings, keyed by the form names the API accepts.
 #[rustfmt::skip]
-static ENDINGS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+static ENDINGS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     map(&[
         ("nom_n", "е"), ("nom_f", "а"), ("nom_pl", "і"), ("gen", "ого"), ("dat", "ому"),
         ("prep", "ому"), ("loc", "ому"), ("pl", "их"), ("loc_pl", "их"), ("acc_f", "у"),
@@ -181,7 +181,7 @@ static ENDINGS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
 
 /// Soft-stem adjective endings, used by ordinals such as `третій`.
 #[rustfmt::skip]
-static SOFT_ENDINGS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+static SOFT_ENDINGS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     map(&[
         ("nom_n", "є"), ("nom_f", "я"), ("gen", "ього"), ("dat", "ьому"), ("prep", "ьому"),
         ("loc", "ьому"), ("pl", "іх"), ("loc_pl", "іх"), ("acc_f", "ю"), ("gen_f", "ьої"),

@@ -1,7 +1,7 @@
 //! Abbreviation expansion, acronym spelling and Latin transliteration.
 
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use crate::uktextnorm::lexicon;
 use crate::uktextnorm::morphology::{PRONUNCIATION, TRANSLITERATION};
@@ -78,8 +78,8 @@ pub fn normalize_abbreviations(text: &str) -> String {
         for &(key, _) in lexicon::ABBREVIATIONS.iter() {
             let Some(pos) = match_key_at(text, i, key) else { continue };
             let left_boundary = char_before(text, i).is_none_or(|cp| !is_word_character(cp));
-            let key_start = key.chars().next().expect("keys are not empty");
-            let key_end = key.chars().next_back().expect("keys are not empty");
+            let Some(key_start) = key.chars().next() else { continue };
+            let Some(key_end) = key.chars().next_back() else { continue };
             let following = text[pos..].chars().next();
             let right_boundary =
                 !is_word_character(key_end) || following.is_none_or(|cp| !is_word_character(cp));
@@ -89,7 +89,7 @@ pub fn normalize_abbreviations(text: &str) -> String {
             let Some(&expansion) = ABBREVIATIONS.get(&compact_spaces_lower(&text[i..pos])) else {
                 continue;
             };
-            let first = text[i..].chars().next().expect("i is in bounds");
+            let Some(first) = text[i..].chars().next() else { break 'outer };
             if is_upper_uk(first) {
                 out.push_str(&capitalize_first_letter(expansion));
             } else {
@@ -103,7 +103,7 @@ pub fn normalize_abbreviations(text: &str) -> String {
             i = pos;
             continue 'outer;
         }
-        let cp = text[i..].chars().next().expect("i is in bounds");
+        let Some(cp) = text[i..].chars().next() else { break };
         out.push(cp);
         i += cp.len_utf8();
     }
@@ -145,7 +145,7 @@ pub fn expand_abbreviations(text: &str) -> String {
 }
 
 /// Latin letters carrying diacritics, mapped to their nearest Cyrillic reading.
-static LATIN_DIACRITICS: Lazy<HashMap<char, &'static str>> = Lazy::new(|| {
+static LATIN_DIACRITICS: LazyLock<HashMap<char, &'static str>> = LazyLock::new(|| {
     let groups: [(&str, &str); 11] = [
         ("áàâãåāăąÁÀÂÃÅĀĂĄ", "а"),
         ("äÄéèêëēėęÉÈÊËĒĖĘ", "е"),
@@ -172,7 +172,9 @@ pub fn transliterate_to_cyrillic(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
     while i < text.len() {
-        let cp = text[i..].chars().next().expect("i is in bounds");
+        let Some(cp) = text[i..].chars().next() else {
+            break;
+        };
         if cp.is_ascii_alphabetic() {
             // Try three-, then two-, then one-letter sequences.
             let matched = [3usize, 2, 1].into_iter().find_map(|len| {
@@ -183,15 +185,12 @@ pub fn transliterate_to_cyrillic(text: &str) -> String {
                 let key = lower_text(&text[i..end]);
                 TRANSLITERATION.get(key.as_str()).map(|&value| (len, value))
             });
-            match matched {
-                Some((len, value)) => {
-                    out.push_str(value);
-                    i += len;
-                }
-                None => {
-                    out.push(cp);
-                    i += cp.len_utf8();
-                }
+            if let Some((len, value)) = matched {
+                out.push_str(value);
+                i += len;
+            } else {
+                out.push(cp);
+                i += cp.len_utf8();
             }
             continue;
         }

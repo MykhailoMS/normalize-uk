@@ -1,22 +1,22 @@
 //! Regex fragments and compiled patterns derived from the lexicon tables.
 
 use fancy_regex::Regex;
-use once_cell::sync::Lazy;
 
 use super::lexicon;
 use super::re::{compile, compile_i};
 use super::text::regex_alternation;
+use std::sync::LazyLock;
 
 /// All unit keys as a regex alternation, longest first.
-pub(crate) static UNIT_ALT: Lazy<String> =
-    Lazy::new(|| regex_alternation(lexicon::UNITS.iter().map(|u| u.key)));
+pub(crate) static UNIT_ALT: LazyLock<String> =
+    LazyLock::new(|| regex_alternation(lexicon::UNITS.iter().map(|u| u.key)));
 
 /// All counted-noun keys as a regex alternation, longest first.
-pub(crate) static COUNTED_NOUN_ALT: Lazy<String> =
-    Lazy::new(|| regex_alternation(lexicon::COUNTED_NOUNS.iter().map(|n| n.key)));
+pub(crate) static COUNTED_NOUN_ALT: LazyLock<String> =
+    LazyLock::new(|| regex_alternation(lexicon::COUNTED_NOUNS.iter().map(|n| n.key)));
 
 /// Currency codes and symbols, plus `грн`, as a non-capturing alternation.
-pub(crate) static CURRENCY_TOKEN_ALT: Lazy<String> = Lazy::new(|| {
+pub(crate) static CURRENCY_TOKEN_ALT: LazyLock<String> = LazyLock::new(|| {
     let mut keys: Vec<&str> = vec!["грн"];
     for entry in lexicon::CURRENCIES.iter() {
         keys.push(entry.code);
@@ -28,8 +28,8 @@ pub(crate) static CURRENCY_TOKEN_ALT: Lazy<String> = Lazy::new(|| {
 });
 
 /// Currency codes alone, as an alternation.
-pub(crate) static CURRENCY_CODE_ALT: Lazy<String> =
-    Lazy::new(|| regex_alternation(lexicon::CURRENCIES.iter().map(|c| c.code)));
+pub(crate) static CURRENCY_CODE_ALT: LazyLock<String> =
+    LazyLock::new(|| regex_alternation(lexicon::CURRENCIES.iter().map(|c| c.code)));
 
 /// Genitive month names, in the spellings a date can use.
 pub(crate) const MONTH_ALT: &str = concat!(
@@ -51,7 +51,7 @@ pub(crate) const RANGE_SEPARATOR: &str = r"(?:-|−|‐|‑|‒|–|—|…)";
 pub(crate) const RANGE_PREFIX: &str = r"(^|[\s(\[{:;,.!?=]|(?:[-–—]\s+))";
 
 /// `15–17 травня 2024 року`
-pub(crate) static DATE_DAY_RANGE_RE: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static DATE_DAY_RANGE_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile(&format!(
         concat!(
             r"\b(\d{{1,2}})\s*(?:-|−|–|—)\s*(\d{{1,2}})\s+({})\s+(\d{{3,4}})",
@@ -62,7 +62,7 @@ pub(crate) static DATE_DAY_RANGE_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// `15 травня 2024 року`
-pub(crate) static DATE_SPELLED_RE: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static DATE_SPELLED_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_i(&format!(
         concat!(
             r"\b(\d{{1,2}})\s+({})\s+(\d{{3,4}})",
@@ -73,7 +73,7 @@ pub(crate) static DATE_SPELLED_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// A preposition that governs the case of the number after it.
-pub(crate) static CASE_PREP_RE: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static CASE_PREP_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile(&format!(
         concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ-])(Близько|близько|Після|після|Протягом|протягом|Впродовж|впродовж|",
@@ -86,7 +86,7 @@ pub(crate) static CASE_PREP_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// `понад 500 користувачів`
-pub(crate) static COUNTED_PONAD_RE: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static COUNTED_PONAD_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile(&format!(
         r"(^|[^А-Яа-яЄєІіЇїҐґ\d])(Понад|понад)\s+([1-9]\d{{0,5}})\s+({})(?![А-Яа-яЄєІіЇїҐґ])",
         *COUNTED_NOUN_ALT
@@ -94,7 +94,7 @@ pub(crate) static COUNTED_PONAD_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// A preposition that puts the counted noun into the genitive.
-pub(crate) static COUNTED_GENITIVE_RE: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static COUNTED_GENITIVE_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile(&format!(
         concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ\d])(Близько|близько|Більше|більше|Менше|менше|Серед|серед|До|до|",
@@ -106,7 +106,7 @@ pub(crate) static COUNTED_GENITIVE_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// A bare count followed by a counted noun.
-pub(crate) static COUNTED_NOUNS_RE: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static COUNTED_NOUNS_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_i(&format!(
         r"(^|[^А-Яа-яЄєІіЇїҐґ\d/])([1-9]\d{{0,5}})\s+({})(?![А-Яа-яЄєІіЇїҐґ])",
         *COUNTED_NOUN_ALT
@@ -114,7 +114,7 @@ pub(crate) static COUNTED_NOUNS_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// A quantity followed by a unit of measure.
-pub(crate) static MEASUREMENTS_RE: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static MEASUREMENTS_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile(&format!(
         r"(^|[^\d.,+\-])([+\-]?\d+(?:[.,]\d+)?)\s*({})(\.?)(?![A-Za-zА-Яа-яЄєІіЇїҐґ])",
         *UNIT_ALT
@@ -122,11 +122,11 @@ pub(crate) static MEASUREMENTS_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// `$5 млн`
-pub(crate) static SYMBOL_CURRENCY_PREFIX_RE: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static SYMBOL_CURRENCY_PREFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile(&format!(r"({})\s*(\d+(?:[.,]\d+)?)\s*({MULTIPLIER_TOKEN})", *CURRENCY_TOKEN_ALT))
 });
 
 /// `5 млн $`
-pub(crate) static SYMBOL_CURRENCY_SUFFIX_RE: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static SYMBOL_CURRENCY_SUFFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile(&format!(r"(\d+(?:[.,]\d+)?)\s*({MULTIPLIER_TOKEN})\s*({})", *CURRENCY_TOKEN_ALT))
 });

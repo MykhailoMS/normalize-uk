@@ -1,7 +1,7 @@
 //! Checksum and calendar validation for the identifiers the normalizer reads.
 
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use super::text::compact_ascii_alnum_upper;
 
@@ -24,12 +24,12 @@ pub(crate) fn roman_to_int(s: &str) -> u64 {
         total += if v < prev { -v } else { v };
         prev = v;
     }
-    total.max(0) as u64
+    u64::try_from(total.max(0)).unwrap_or(0)
 }
 
 /// True when `s` is a well-formed Roman numeral in the classic subtractive style.
 pub(crate) fn valid_roman(s: &str) -> bool {
-    static RE: Lazy<fancy_regex::Regex> = Lazy::new(|| {
+    static RE: LazyLock<fancy_regex::Regex> = LazyLock::new(|| {
         fancy_regex::Regex::new(r"^M{0,4}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})$")
             .expect("valid pattern")
     });
@@ -45,9 +45,12 @@ pub(crate) fn is_valid_date(day: i32, month: i32, year: i32) -> bool {
     if !(1..=12).contains(&month) || day < 1 {
         return false;
     }
-    #[rustfmt::skip]
-    const LENGTHS: [i32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let max_day = if month == 2 && is_leap(year) { 29 } else { LENGTHS[(month - 1) as usize] };
+    let max_day = match month {
+        2 if is_leap(year) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
     day <= max_day
 }
 
@@ -79,10 +82,11 @@ fn check_digit(ch: char, allow_x: bool) -> Option<u32> {
 pub(crate) fn valid_isbn(value: &str) -> bool {
     let compact = compact_ascii_alnum_upper(value);
     if compact.len() == 10 {
+        // Weights run from 10 down to 1; only the final position may be `X`.
         let mut sum = 0;
-        for (i, ch) in compact.chars().enumerate() {
-            match check_digit(ch, i == 9) {
-                Some(digit) => sum += (10 - i as u32) * digit,
+        for (weight, ch) in (1..=10u32).rev().zip(compact.chars()) {
+            match check_digit(ch, weight == 1) {
+                Some(digit) => sum += weight * digit,
                 None => return false,
             }
         }
@@ -107,10 +111,11 @@ pub(crate) fn valid_issn(value: &str) -> bool {
     if compact.len() != 8 {
         return false;
     }
+    // Weights run from 8 down to 1; only the final position may be `X`.
     let mut sum = 0;
-    for (i, ch) in compact.chars().enumerate() {
-        match check_digit(ch, i == 7) {
-            Some(digit) => sum += (8 - i as u32) * digit,
+    for (weight, ch) in (1..=8u32).rev().zip(compact.chars()) {
+        match check_digit(ch, weight == 1) {
+            Some(digit) => sum += weight * digit,
             None => return false,
         }
     }
@@ -120,7 +125,7 @@ pub(crate) fn valid_issn(value: &str) -> bool {
 /// Expected IBAN lengths per country, used to reject truncated numbers that
 /// would still pass the mod-97 check.
 #[rustfmt::skip]
-static IBAN_LENGTHS: Lazy<HashMap<&'static str, usize>> = Lazy::new(|| {
+static IBAN_LENGTHS: LazyLock<HashMap<&'static str, usize>> = LazyLock::new(|| {
     [
         ("AL", 28), ("AD", 24), ("AT", 20), ("AZ", 28), ("BH", 22), ("BE", 16), ("BA", 20),
         ("BR", 29), ("BG", 22), ("CR", 22), ("HR", 21), ("CY", 28), ("CZ", 24), ("DK", 18),
@@ -247,7 +252,7 @@ pub(crate) fn valid_uuid_variant(value: &str) -> bool {
 }
 
 pub(crate) fn valid_hash_length(algorithm: &str, value: &str) -> bool {
-    static LENGTHS: Lazy<HashMap<&'static str, usize>> = Lazy::new(|| {
+    static LENGTHS: LazyLock<HashMap<&'static str, usize>> = LazyLock::new(|| {
         [
             ("MD5", 32),
             ("SHA1", 40),

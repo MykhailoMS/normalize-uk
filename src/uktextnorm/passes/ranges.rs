@@ -2,7 +2,7 @@
 //! currencies, percentages, paragraphs, school grades and bare numbers.
 
 use fancy_regex::{Captures, Regex};
-use once_cell::sync::Lazy;
+use std::fmt::Write as _;
 
 use crate::uktextnorm::lexicon::{self, Forms, Gender};
 use crate::uktextnorm::morphology::plural;
@@ -21,6 +21,7 @@ use crate::uktextnorm::temperature::{
 };
 use crate::uktextnorm::text::{join, lower_text, parse_u64, try_parse_u64};
 use crate::uktextnorm::RangeStyle;
+use std::sync::LazyLock;
 
 /// Nothing else may follow a number that closes a range.
 const NUMBER_BOUNDARY: &str = r"(?![\d:/+\-−–—])(?![.,]\d)";
@@ -84,19 +85,19 @@ pub(crate) fn clock_time_words(
     if style == RangeStyle::FromTo {
         let mut out = format!("{} години", ordinal_words(hour, "gen_f"));
         if minute != 0 {
-            out.push_str(&format!(" {} хвилин", join(&number_words_for_case(minute, "gen", 'f'))));
+            let _ = write!(out, " {} хвилин", join(&number_words_for_case(minute, "gen", 'f')));
         }
         if let Some(second) = second {
-            out.push_str(&format!(" {} секунд", join(&number_words_for_case(second, "gen", 'f'))));
+            let _ = write!(out, " {} секунд", join(&number_words_for_case(second, "gen", 'f')));
         }
         return out;
     }
     let mut out = hours_words(hour);
     if minute != 0 {
-        out.push_str(&format!(" {}", minutes_words(minute, &MINUTE_FORMS)));
+        let _ = write!(out, " {}", minutes_words(minute, &MINUTE_FORMS));
     }
     if let Some(second) = second {
-        out.push_str(&format!(" {}", minutes_words(second, &SECOND_FORMS)));
+        let _ = write!(out, " {}", minutes_words(second, &SECOND_FORMS));
     }
     out
 }
@@ -278,13 +279,13 @@ pub(crate) fn normalize_ranges(text: &str, style: RangeStyle) -> String {
     let text =
         sub_around(&text, &temperature_range, |m, ctx| say_temperature(m, ctx, 2, 3, 4, false));
 
-    static PREPOSITIONAL_YEAR_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static PREPOSITIONAL_YEAR_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ])(У|у|В|в)\s+(\d{3,4})\s*(?:-|−|–|—)\s*(\d{3,4})",
             r"\s*(?:рр\.?|роки|роках|року|років)(?![\dа-яіїєґ])"
         ))
     });
-    static BARE_PREPOSITIONAL_YEAR_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static BARE_PREPOSITIONAL_YEAR_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile(r"(^|[^А-Яа-яЄєІіЇїҐґ])(У|у|В|в)\s+(\d{4})\s*(?:-|−|–|—)\s*(\d{4})(?![\dа-яіїєґ])")
     });
     let say_prepositional_year_range = |m: &Captures<'_, str>| {
@@ -309,7 +310,7 @@ pub(crate) fn normalize_ranges(text: &str, style: RangeStyle) -> String {
         second
     }
 
-    static ABBREVIATED_DECADE_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static ABBREVIATED_DECADE_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"\b((?:19|20)\d{2})\s*(?:-|–|—)\s*(\d{2})(?:-|–|—)?(х|их|і|ї)",
             r"(?:\s+(роках|років|роки))?(?![\dА-Яа-яЄєІіЇїҐґ])"
@@ -337,7 +338,7 @@ pub(crate) fn normalize_ranges(text: &str, style: RangeStyle) -> String {
         )
     });
 
-    static ABBREVIATED_PREPOSITIONAL_YEAR_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static ABBREVIATED_PREPOSITIONAL_YEAR_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ])(У|у|В|в)\s+((?:19|20)\d{2})\s*(?:-|–|—)\s*(\d{2})",
             r"\s*(?:рр?\.?|роки|роках|року|років)(?![\dа-яіїєґ])"
@@ -355,7 +356,7 @@ pub(crate) fn normalize_ranges(text: &str, style: RangeStyle) -> String {
         )
     });
 
-    static ABBREVIATED_YEAR_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static ABBREVIATED_YEAR_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"\b((?:19|20)\d{2})\s*(?:-|–|—)\s*(\d{2})\s*(?:рр?\.?|роки|роках|року|років)(?![\dа-яіїєґ])",
         )
@@ -370,7 +371,7 @@ pub(crate) fn normalize_ranges(text: &str, style: RangeStyle) -> String {
         }
     });
 
-    static YEAR_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static YEAR_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile(r"\b(\d{3,4})\s*(?:-|−|–|—)\s*(\d{3,4})\s*(?:рр\.?|роки)(?![а-яіїєґ])")
     });
     let text = sub_ctx(&text, &YEAR_RANGE, |m, prefix| {

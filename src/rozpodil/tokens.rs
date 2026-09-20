@@ -1,7 +1,10 @@
 //! Tokenization.
 
 use super::abbrev;
-use super::chars::*;
+use super::chars::{
+    codepoints, is_alpha, is_digit, is_inner_uk_apostrophe, is_latin, is_space, is_uk,
+    is_word_mark, lower_ascii_ukrainian, smile_at, Cp,
+};
 use super::{push_substring, Substring};
 
 const TOKEN_PUNCT: &str = "\\/!#$%&*+,.:;<=>?@^_`|~№…‑–—−-«“‘»”’\"„'()[]{}";
@@ -225,6 +228,7 @@ fn token_join(
 }
 
 /// Splits `text` into tokens.
+#[must_use]
 pub fn tokenize(text: &str) -> Vec<Substring<'_>> {
     let atoms = atoms(text);
     let Some(first) = atoms.first() else {

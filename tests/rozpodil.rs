@@ -5,7 +5,7 @@ use normalize_uk::rozpodil::{split_sentences, tokenize, Substring};
 /// Locates each expected chunk in `text` in order, so the test cases stay
 /// readable while still asserting exact byte offsets.
 #[track_caller]
-fn check(name: &str, actual: Vec<Substring<'_>>, text: &str, chunks: &[&str]) {
+fn check(name: &str, actual: &[Substring<'_>], text: &str, chunks: &[&str]) {
     let mut expected = Vec::new();
     let mut offset = 0;
     for chunk in chunks {
@@ -21,12 +21,12 @@ fn check(name: &str, actual: Vec<Substring<'_>>, text: &str, chunks: &[&str]) {
 
 #[track_caller]
 fn sents(name: &str, text: &str, chunks: &[&str]) {
-    check(name, split_sentences(text), text, chunks);
+    check(name, &split_sentences(text), text, chunks);
 }
 
 #[track_caller]
 fn toks(name: &str, text: &str, chunks: &[&str]) {
-    check(name, tokenize(text), text, chunks);
+    check(name, &tokenize(text), text, chunks);
 }
 
 #[test]

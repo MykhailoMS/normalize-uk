@@ -1,8 +1,9 @@
 //! Currency amounts, finance tickers and known acronyms.
 
 use fancy_regex::Regex;
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::fmt::Write as _;
+use std::sync::LazyLock;
 
 use crate::uktextnorm::lexicon::{self, Currency};
 use crate::uktextnorm::morphology::{feminine_last, plural};
@@ -53,9 +54,9 @@ fn escape(symbol: &str) -> String {
 /// Expands the acronyms listed in the lexicon, capitalizing the expansion when
 /// the acronym opens a sentence.
 pub(crate) fn normalize_known_acronyms(text: &str) -> String {
-    static MAP: Lazy<HashMap<&'static str, &'static str>> =
-        Lazy::new(|| lexicon::ACRONYMS.iter().copied().collect());
-    static RE: Lazy<Regex> = Lazy::new(|| {
+    static MAP: LazyLock<HashMap<&'static str, &'static str>> =
+        LazyLock::new(|| lexicon::ACRONYMS.iter().copied().collect());
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
         compile(&format!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ])((?:{})(?![А-Яа-яЄєІіЇїҐґ]))",
             regex_alternation(lexicon::ACRONYMS.iter().map(|&(a, _)| a))
@@ -75,7 +76,7 @@ pub(crate) fn normalize_known_acronyms(text: &str) -> String {
 
 /// Reads `$5 млн` and `5 млн $` by moving the currency after the scale word.
 pub(crate) fn normalize_symbol_currency(text: &str) -> String {
-    static GENITIVE_PLURAL: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+    static GENITIVE_PLURAL: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
         let mut out: HashMap<&str, &str> = HashMap::from([("грн", "гривень")]);
         for entry in lexicon::CURRENCIES.iter() {
             out.entry(entry.code).or_insert(entry.main.many);
@@ -98,7 +99,7 @@ pub(crate) fn normalize_symbol_currency(text: &str) -> String {
 /// Rewrites regional dollar and yen signs as their ISO code.
 pub(crate) fn normalize_regional_currency_aliases(text: &str) -> String {
     #[rustfmt::skip]
-    static ALIASES: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+    static ALIASES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
         [
             ("us$", "USD"), ("ca$", "CAD"), ("au$", "AUD"), ("nz$", "NZD"), ("hk$", "HKD"),
             ("sg$", "SGD"), ("jp¥", "JPY"), ("cn¥", "CNY"), ("r$", "BRL"),
@@ -106,8 +107,8 @@ pub(crate) fn normalize_regional_currency_aliases(text: &str) -> String {
         .into_iter()
         .collect()
     });
-    static RE: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"(US\$|CA\$|AU\$|NZ\$|HK\$|SG\$|JP¥|CN¥|R\$)"));
+    static RE: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"(US\$|CA\$|AU\$|NZ\$|HK\$|SG\$|JP¥|CN¥|R\$)"));
     sub(text, &RE, |m| {
         ALIASES
             .get(lower_text(whole(m)).as_str())
@@ -135,40 +136,37 @@ fn amount_words(raw: &str, currency: &Currency) -> Option<String> {
     let minor = currency.minor_digits as usize;
     let comma = amount.rfind(',');
     let dot = amount.rfind('.');
-    match (comma, dot) {
+    if let (Some(comma), Some(dot)) = (comma, dot) {
         // Both separators present: the later one is the decimal point.
-        (Some(comma), Some(dot)) => {
-            let grouping = if comma > dot { '.' } else { ',' };
-            amount.retain(|c| c != grouping);
-        }
-        _ => {
-            let separator = if comma.is_some() { ',' } else { '.' };
-            let first = amount.find(separator);
-            let last = amount.rfind(separator);
-            if let (Some(first), Some(last)) = (first, last) {
-                if first != last {
-                    // Several separators: grouping, possibly with a decimal tail.
-                    let trailing = amount.len() - last - 1;
-                    if trailing > minor && trailing != 3 {
-                        return None;
-                    }
-                    let keep_last = trailing == minor;
-                    let mut normalized = String::with_capacity(amount.len());
-                    for (i, ch) in amount.char_indices() {
-                        if ch != separator || (i == last && keep_last) {
-                            normalized.push(ch);
-                        }
-                    }
-                    amount = normalized;
-                } else if (1..=3).contains(&first)
-                    && !amount.starts_with('0')
-                    && amount.len() - first - 1 == 3
-                    && minor != 3
-                {
-                    // A lone separator with exactly three digits after it groups
-                    // thousands rather than opening a fraction.
-                    amount.remove(first);
+        let grouping = if comma > dot { '.' } else { ',' };
+        amount.retain(|c| c != grouping);
+    } else {
+        let separator = if comma.is_some() { ',' } else { '.' };
+        let first = amount.find(separator);
+        let last = amount.rfind(separator);
+        if let (Some(first), Some(last)) = (first, last) {
+            if first != last {
+                // Several separators: grouping, possibly with a decimal tail.
+                let trailing = amount.len() - last - 1;
+                if trailing > minor && trailing != 3 {
+                    return None;
                 }
+                let keep_last = trailing == minor;
+                let mut normalized = String::with_capacity(amount.len());
+                for (i, ch) in amount.char_indices() {
+                    if ch != separator || (i == last && keep_last) {
+                        normalized.push(ch);
+                    }
+                }
+                amount = normalized;
+            } else if (1..=3).contains(&first)
+                && !amount.starts_with('0')
+                && amount.len() - first - 1 == 3
+                && minor != 3
+            {
+                // A lone separator with exactly three digits after it groups
+                // thousands rather than opening a fraction.
+                amount.remove(first);
             }
         }
     }
@@ -206,7 +204,7 @@ fn amount_words(raw: &str, currency: &Currency) -> Option<String> {
         if currency.sub_feminine {
             feminine_last(&mut sub_words);
         }
-        out.push_str(&format!(" {} {}", join(&sub_words), plural(sub_units, &currency.sub)));
+        let _ = write!(out, " {} {}", join(&sub_words), plural(sub_units, &currency.sub));
     }
     Some(out)
 }
@@ -217,7 +215,7 @@ fn starts_inside_number(prefix: &str) -> bool {
 }
 
 /// The patterns that spot an amount for one currency, in matching order.
-static CURRENCY_PATTERNS: Lazy<Vec<(usize, Vec<Regex>)>> = Lazy::new(|| {
+static CURRENCY_PATTERNS: LazyLock<Vec<(usize, Vec<Regex>)>> = LazyLock::new(|| {
     let amount = amount_group();
     lexicon::CURRENCIES
         .iter()
@@ -246,28 +244,28 @@ static CURRENCY_PATTERNS: Lazy<Vec<(usize, Vec<Regex>)>> = Lazy::new(|| {
         .collect()
 });
 
-static CURRENCY_BY_CODE: Lazy<HashMap<String, usize>> = Lazy::new(|| {
+static CURRENCY_BY_CODE: LazyLock<HashMap<String, usize>> = LazyLock::new(|| {
     lexicon::CURRENCIES.iter().enumerate().map(|(i, c)| (lower_text(c.code), i)).collect()
 });
 
 /// Reads currency amounts written with a symbol, a word form or an ISO code.
 pub(crate) fn normalize_currency(text: &str) -> String {
-    static SIGNED_PREFIX: Lazy<Regex> =
-        Lazy::new(|| compile_i(&format!(r"([+-])\s*({})\s*(?=\d)", *CURRENCY_TOKEN_ALT)));
-    static ACCOUNTING_PREFIX: Lazy<Regex> = Lazy::new(|| {
+    static SIGNED_PREFIX: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(&format!(r"([+-])\s*({})\s*(?=\d)", *CURRENCY_TOKEN_ALT)));
+    static ACCOUNTING_PREFIX: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(&format!(r"\(({})\s*(\d+(?:[.,]\d{{1,4}})?)\)", *CURRENCY_TOKEN_ALT))
     });
-    static ACCOUNTING: Lazy<Regex> = Lazy::new(|| {
+    static ACCOUNTING: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(&format!(r"\((\d+(?:[.,]\d{{1,4}})?)\s*({})\)", *CURRENCY_TOKEN_ALT))
     });
-    static SUFFIX_CODE: Lazy<Regex> = Lazy::new(|| {
+    static SUFFIX_CODE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(&format!(
             r"{}\s*({})(?![A-Za-zА-Яа-яЄєІіЇїҐґ])",
             amount_group(),
             *CURRENCY_CODE_ALT
         ))
     });
-    static PREFIX_CODE: Lazy<Regex> = Lazy::new(|| {
+    static PREFIX_CODE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(&format!(
             r"({})\s*{}(?![A-Za-zА-Яа-яЄєІіЇїҐґ])",
             *CURRENCY_CODE_ALT,
@@ -350,7 +348,7 @@ fn canonical_amount(raw: &str) -> Option<String> {
             if grouping == '.' {
                 // The decimal separator was the comma; make it a dot.
                 if let Some(at) = amount.rfind(',') {
-                    amount.replace_range(at..at + 1, ".");
+                    amount.replace_range(at..=at, ".");
                 }
             }
         }
@@ -360,7 +358,9 @@ fn canonical_amount(raw: &str) -> Option<String> {
             let first = amount.find(separator).expect("one separator is present");
             let last = amount.rfind(separator).expect("one separator is present");
             let mut grouped;
-            if first != last {
+            if first == last {
+                grouped = amount.len() - first - 1 == 3 && &amount[..first] != "0";
+            } else {
                 // Every group after the first separator must be three digits.
                 grouped = true;
                 let mut group_start = first + 1;
@@ -377,15 +377,13 @@ fn canonical_amount(raw: &str) -> Option<String> {
                         None => break,
                     }
                 }
-            } else {
-                grouped = amount.len() - first - 1 == 3 && &amount[..first] != "0";
             }
             if grouped {
                 amount.retain(|c| c != separator);
             } else if first != last {
                 return None;
             } else if separator == ',' {
-                amount.replace_range(first..first + 1, ".");
+                amount.replace_range(first..=first, ".");
             }
         }
     }
@@ -399,9 +397,9 @@ fn canonical_amount(raw: &str) -> Option<String> {
 /// `include_generic` also spells out unknown uppercase tickers, which the
 /// pipeline only does on its second pass.
 pub(crate) fn normalize_finance(text: &str, include_generic: bool) -> String {
-    static TICKER_ALT: Lazy<String> =
-        Lazy::new(|| regex_alternation(lexicon::FINANCE_UNITS.iter().map(|u| u.code)));
-    static RECOGNIZED_TICKER_ALT: Lazy<String> = Lazy::new(|| {
+    static TICKER_ALT: LazyLock<String> =
+        LazyLock::new(|| regex_alternation(lexicon::FINANCE_UNITS.iter().map(|u| u.code)));
+    static RECOGNIZED_TICKER_ALT: LazyLock<String> = LazyLock::new(|| {
         regex_alternation(
             lexicon::FINANCE_UNITS
                 .iter()
@@ -409,15 +407,15 @@ pub(crate) fn normalize_finance(text: &str, include_generic: bool) -> String {
                 .chain(lexicon::CURRENCIES.iter().map(|c| c.code)),
         )
     });
-    static BITCOIN_PREFIX: Lazy<Regex> =
-        Lazy::new(|| compile(&format!(r"₿\s*([+-]?)({RAW_AMOUNT})")));
-    static BITCOIN_SUFFIX: Lazy<Regex> =
-        Lazy::new(|| compile(&format!(r"([+-]?)({RAW_AMOUNT})\s*₿")));
-    static KNOWN_PAIR: Lazy<Regex> = Lazy::new(|| {
+    static BITCOIN_PREFIX: LazyLock<Regex> =
+        LazyLock::new(|| compile(&format!(r"₿\s*([+-]?)({RAW_AMOUNT})")));
+    static BITCOIN_SUFFIX: LazyLock<Regex> =
+        LazyLock::new(|| compile(&format!(r"([+-]?)({RAW_AMOUNT})\s*₿")));
+    static KNOWN_PAIR: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(&format!(r"\b({})/({})\b", *RECOGNIZED_TICKER_ALT, *RECOGNIZED_TICKER_ALT))
     });
-    static PAIR: Lazy<Regex> =
-        Lazy::new(|| compile(&format!(r"\b({GENERIC_TICKER})/({GENERIC_TICKER})\b")));
+    static PAIR: LazyLock<Regex> =
+        LazyLock::new(|| compile(&format!(r"\b({GENERIC_TICKER})/({GENERIC_TICKER})\b")));
 
     let text = sub(text, &BITCOIN_PREFIX, |m| format!("{}{} BTC", cap(m, 1), cap(m, 2)));
     let text = sub(&text, &BITCOIN_SUFFIX, |m| format!("{}{} BTC", cap(m, 1), cap(m, 2)));

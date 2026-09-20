@@ -3,8 +3,9 @@
 //! symbols and phone numbers.
 
 use fancy_regex::Regex;
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::fmt::Write as _;
+use std::sync::LazyLock;
 
 use crate::uktextnorm::numbers::number_to_words_digit_by_digit;
 use crate::uktextnorm::re::{cap, compile, compile_i, sub, sub_ctx, whole};
@@ -107,7 +108,7 @@ pub(crate) fn normalize_unicode(text: &str, quote_style: QuoteStyle) -> String {
             match quote_style {
                 QuoteStyle::Straight => out.push('"'),
                 QuoteStyle::Guillemets => {
-                    out.push(if is_opening_quote(cp) || cp == '“' { '«' } else { '»' })
+                    out.push(if is_opening_quote(cp) || cp == '“' { '«' } else { '»' });
                 }
                 QuoteStyle::Strip => {
                     // A quote between two word characters leaves a space behind.
@@ -131,7 +132,7 @@ pub(crate) fn normalize_unicode(text: &str, quote_style: QuoteStyle) -> String {
 
 /// Latin letters that look identical to a Cyrillic one.
 #[rustfmt::skip]
-static LATIN_TO_CYRILLIC: Lazy<HashMap<char, char>> = Lazy::new(|| {
+static LATIN_TO_CYRILLIC: LazyLock<HashMap<char, char>> = LazyLock::new(|| {
     [
         ('a', 'а'), ('e', 'е'), ('i', 'і'), ('o', 'о'), ('p', 'р'), ('c', 'с'), ('x', 'х'),
         ('y', 'у'), ('A', 'А'), ('B', 'В'), ('C', 'С'), ('E', 'Е'), ('H', 'Н'), ('I', 'І'),
@@ -141,8 +142,8 @@ static LATIN_TO_CYRILLIC: Lazy<HashMap<char, char>> = Lazy::new(|| {
     .collect()
 });
 
-static CYRILLIC_TO_LATIN: Lazy<HashMap<char, char>> =
-    Lazy::new(|| LATIN_TO_CYRILLIC.iter().map(|(&l, &c)| (c, l)).collect());
+static CYRILLIC_TO_LATIN: LazyLock<HashMap<char, char>> =
+    LazyLock::new(|| LATIN_TO_CYRILLIC.iter().map(|(&l, &c)| (c, l)).collect());
 
 /// Repairs words that mix Latin and Cyrillic letters that look the same,
 /// converting the minority script into the majority one.
@@ -209,17 +210,18 @@ fn strip_exact_pair(value: &str, marker: char) -> String {
 /// Normalizes spaces, Markdown emphasis, apostrophes, spacing around
 /// punctuation and slashed units.
 pub(crate) fn normalize_typography(text: &str) -> String {
-    static SPACE_BEFORE_PUNCTUATION: Lazy<Regex> =
-        Lazy::new(|| compile(r"[ \t]+(\.(?=\d|[.,;:!?]|$)|[,;:!?])"));
-    static SPACED_UNIT_SLASH: Lazy<Regex> = Lazy::new(|| {
+    static SPACE_BEFORE_PUNCTUATION: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"[ \t]+(\.(?=\d|[.,;:!?]|$)|[,;:!?])"));
+    static SPACED_UNIT_SLASH: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(км|м|см³|см3|кбіт|Кбіт|мбіт|Мбіт|гбіт|Гбіт)",
             r"[ \t]*/[ \t]*(год|с(?:²|2)?|c(?:²|2)?)(?![A-Za-z])"
         ))
     });
-    static SPACED_ASCII_SLASH: Lazy<Regex> =
-        Lazy::new(|| compile(r"([A-Za-z])[ \t]*/[ \t]*([A-Za-z])"));
-    static SPACED_CYRILLIC_DIMENSION: Lazy<Regex> = Lazy::new(|| compile(r"(\d)\s+(?:х|Х)\s+(\d)"));
+    static SPACED_ASCII_SLASH: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"([A-Za-z])[ \t]*/[ \t]*([A-Za-z])"));
+    static SPACED_CYRILLIC_DIMENSION: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(\d)\s+(?:х|Х)\s+(\d)"));
 
     let mut text = text.to_owned();
     for space in ['\u{a0}', '\u{2009}', '\u{202f}', '\u{2060}'] {
@@ -244,7 +246,8 @@ pub(crate) fn normalize_typography(text: &str) -> String {
 
 /// Spells a web address out symbol by symbol.
 fn spell_web(value: &str) -> String {
-    static UKRAINIAN_DOMAIN_LABEL: Lazy<Regex> = Lazy::new(|| compile_i(r"\.(ua|укр)(?=$|[/?#])"));
+    static UKRAINIAN_DOMAIN_LABEL: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\.(ua|укр)(?=$|[/?#])"));
     let mut s = value.trim_end_matches(['.', ',', '!', '?']).to_owned();
     s = sub(&s, &UKRAINIAN_DOMAIN_LABEL, |m| {
         if lower_text(cap(m, 1)) == "ua" {
@@ -273,27 +276,28 @@ fn spell_web(value: &str) -> String {
 
 /// Reads DOIs, emails, URLs, hashtags and handles aloud.
 pub(crate) fn normalize_web(text: &str) -> String {
-    static DOI: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\bdoi\s*:\s*(10\.\d{4,9}/[-._;()/:A-Za-z0-9]*[A-Za-z0-9])"));
-    static EMAIL: Lazy<Regex> = Lazy::new(|| {
+    static DOI: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\bdoi\s*:\s*(10\.\d{4,9}/[-._;()/:A-Za-z0-9]*[A-Za-z0-9])"));
+    static EMAIL: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ0-9._%+\-])",
             r"([A-Za-zА-Яа-яЄєІіЇїҐґ0-9._%+\-]+@[A-Za-zА-Яа-яЄєІіЇїҐґ0-9\-]+",
             r"(?:\.[A-Za-zА-Яа-яЄєІіЇїҐґ0-9\-]+)+)"
         ))
     });
-    static URL: Lazy<Regex> = Lazy::new(|| {
+    static URL: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"\b(?:(?:https?|ftp)://|www\.)\S+",
             r"|\b(?:[A-Za-zА-Яа-яЄєІіЇїҐґ0-9-]+\.)+[A-Za-zА-Яа-яЄєІіЇїҐґ]{2,63}(?:[/?#]\S*)?"
         ))
     });
-    static STANDALONE_DOMAIN: Lazy<Regex> = Lazy::new(|| {
+    static STANDALONE_DOMAIN: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ0-9])\.(ua|укр)(?![A-Za-zА-Яа-яЄєІіЇїҐґ0-9])")
     });
-    static HASHTAG: Lazy<Regex> = Lazy::new(|| compile(r"#([A-Za-zА-Яа-яЄєІіЇїҐґ0-9_]+)"));
-    static HANDLE: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ0-9._%+-])@([A-Za-z][A-Za-z0-9_]{1,30})"));
+    static HASHTAG: LazyLock<Regex> = LazyLock::new(|| compile(r"#([A-Za-zА-Яа-яЄєІіЇїҐґ0-9_]+)"));
+    static HANDLE: LazyLock<Regex> = LazyLock::new(|| {
+        compile(r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ0-9._%+-])@([A-Za-z][A-Za-z0-9_]{1,30})")
+    });
 
     let text = sub(text, &DOI, |m| format!("ді оу ай {}", spell_web(cap(m, 1))));
     let text = sub(&text, &EMAIL, |m| format!("{}{}", cap(m, 1), spell_web(cap(m, 2))));
@@ -314,7 +318,7 @@ pub(crate) fn normalize_web(text: &str) -> String {
 /// the surrounding preposition calls for.
 pub(crate) fn normalize_addresses(text: &str) -> String {
     #[rustfmt::skip]
-    static WORDS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+    static WORDS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
         [
             ("м", "місто"), ("с", "село"), ("смт", "селище міського типу"), ("вул", "вулиця"),
             ("просп", "проспект"), ("пр", "проспект"), ("пров", "провулок"), ("пл", "площа"),
@@ -325,15 +329,16 @@ pub(crate) fn normalize_addresses(text: &str) -> String {
         .into_iter()
         .collect()
     });
-    static RE: Lazy<Regex> = Lazy::new(|| {
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"((?:смт|просп|пров|корп|буд|вул|наб|бул|оф|кв|обл|під|пов|р-н|пр|пл|м|с|б(?!\.п)))",
             r"\.(?=\s*[A-Za-zА-Яа-яЄєІіЇїҐґ0-9])"
         ))
     });
-    static LOCATIVE_PREPOSITION: Lazy<Regex> = Lazy::new(|| compile(r"(^|[\s(])(?:у|в)\s+$"));
-    static GENITIVE_PREPOSITION: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[\s(])(?:від|до|з|із|зі|для)\s+$"));
+    static LOCATIVE_PREPOSITION: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[\s(])(?:у|в)\s+$"));
+    static GENITIVE_PREPOSITION: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[\s(])(?:від|до|з|із|зі|для)\s+$"));
 
     sub(text, &RE, |m| {
         let key = lower_text(cap(m, 1));
@@ -385,13 +390,13 @@ pub(crate) fn normalize_addresses(text: &str) -> String {
 
 /// Joins digits that were grouped with spaces, commas or dots.
 pub(crate) fn normalize_number_groups(text: &str, parse_thousand_separators: bool) -> String {
-    static LEADING_DECIMAL: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[\s(\[{=:;])([+\-]?)([.,])(\d+)(?![\d.,])"));
-    static SPACE_GROUPED: Lazy<Regex> = Lazy::new(|| compile(r"\b\d{1,3}(?: \d{3})+\b"));
-    static COMMA_GROUPED: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d.,])(\d{1,3}(?:,\d{3}){2,})(?!\d)"));
-    static DOT_GROUPED: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d.,])(\d{1,3}(?:\.\d{3}){2})(?!\.?\d)"));
+    static LEADING_DECIMAL: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[\s(\[{=:;])([+\-]?)([.,])(\d+)(?![\d.,])"));
+    static SPACE_GROUPED: LazyLock<Regex> = LazyLock::new(|| compile(r"\b\d{1,3}(?: \d{3})+\b"));
+    static COMMA_GROUPED: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d.,])(\d{1,3}(?:,\d{3}){2,})(?!\d)"));
+    static DOT_GROUPED: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d.,])(\d{1,3}(?:\.\d{3}){2})(?!\.?\d)"));
 
     let text = sub(text, &LEADING_DECIMAL, |m| {
         format!("{}{}0{}{}", cap(m, 1), cap(m, 2), cap(m, 3), cap(m, 4))
@@ -410,7 +415,7 @@ pub(crate) fn normalize_number_groups(text: &str, parse_thousand_separators: boo
 /// Expands `ст.`, `п.`, `ч.` and friends before a number or Roman numeral.
 pub(crate) fn normalize_sections(text: &str) -> String {
     #[rustfmt::skip]
-    static SECTION: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+    static SECTION: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
         [
             ("ст", "стаття"), ("ч", "частина"), ("пп", "підпункт"), ("п", "пункт"),
             ("абз", "абзац"), ("розд", "розділ"), ("гл", "глава"), ("табл", "таблиця"),
@@ -419,12 +424,12 @@ pub(crate) fn normalize_sections(text: &str) -> String {
         .into_iter()
         .collect()
     });
-    static RE: Lazy<Regex> = Lazy::new(|| {
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(
             r"(^|[^А-Яа-яЄєІіЇїҐґA-Za-z])(ст|ч|пп|п|абз|розд|гл|табл|рис)\.\s*(?=\d|[MDCLXVI])",
         )
     });
-    static TRAILING_ROMAN: Lazy<Regex> = Lazy::new(|| compile(r"([MDCLXVI]{1,6})\s*$"));
+    static TRAILING_ROMAN: LazyLock<Regex> = LazyLock::new(|| compile(r"([MDCLXVI]{1,6})\s*$"));
 
     sub_ctx(text, &RE, |m, prefix| {
         let key = lower_text(cap(m, 2));
@@ -471,13 +476,13 @@ pub(crate) fn normalize_symbols(text: &str) -> String {
 
 /// Reads Ukrainian and international phone numbers, including extensions.
 pub(crate) fn normalize_text_with_phone_numbers(text: &str, style: PhoneStyle) -> String {
-    static UKRAINIAN: Lazy<Regex> = Lazy::new(|| {
+    static UKRAINIAN: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[^\d.,])((?:\+?380|00380|0)\s*\(?\d{2}\)?[\-\s]?\d{3}[\-\s]?\d{2}[\-\s]?\d{2})",
             r"(?:\s*(?:доб\.?|дод\.?|ext\.?|x)\s*(\d{1,6}))?(?!\d)"
         ))
     });
-    static INTERNATIONAL: Lazy<Regex> = Lazy::new(|| {
+    static INTERNATIONAL: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^\d.,])((?:\+|00)\d{1,3}(?:[\s().-]*\d{1,4}){2,})",
             r"(?:\s*(?:доб\.?|дод\.?|ext\.?|x)\s*(\d{1,6}))?(?!\d)"
@@ -487,7 +492,7 @@ pub(crate) fn normalize_text_with_phone_numbers(text: &str, style: PhoneStyle) -
         let mut out = format!("{}{}", cap(m, 1), normalize_phone_number(cap(m, 2), style));
         let extension = cap(m, 3);
         if !extension.is_empty() {
-            out.push_str(&format!(" додатковий {}", number_to_words_digit_by_digit(extension)));
+            let _ = write!(out, " додатковий {}", number_to_words_digit_by_digit(extension));
         }
         out
     };

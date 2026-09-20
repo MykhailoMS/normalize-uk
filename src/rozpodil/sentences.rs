@@ -1,7 +1,10 @@
 //! Sentence segmentation.
 
 use super::abbrev;
-use super::chars::*;
+use super::chars::{
+    codepoints, is_alpha, is_digit, is_lower_alpha, is_space, is_upper_one, is_word_cp,
+    is_word_letter, lower_ascii_ukrainian, smile_at, Cp,
+};
 use super::{push_substring, Substring};
 
 const ENDINGS: &str = ".?!…";

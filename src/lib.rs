@@ -17,6 +17,13 @@
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+// These pedantic style lints conflict with deliberate crate design: the normalization
+// passes keep their regexes beside the transformation that uses them, several passes
+// are clearest as linear pipelines, and the public options type exposes independent
+// feature switches rather than an artificial state machine.
+#![allow(clippy::items_after_statements)]
+#![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::too_many_lines)]
 
 pub mod rozpodil;
 pub mod uktextnorm;

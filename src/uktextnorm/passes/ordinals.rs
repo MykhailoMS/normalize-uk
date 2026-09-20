@@ -1,8 +1,9 @@
 //! Ordinals, Roman numerals, centuries, quarters, page and section ranges.
 
 use fancy_regex::Regex;
-use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
+use std::sync::LazyLock;
 
 use crate::uktextnorm::lexicon::Forms;
 use crate::uktextnorm::morphology::plural;
@@ -17,7 +18,7 @@ use crate::uktextnorm::RangeStyle;
 
 /// The grammatical form each ordinal suffix stands for.
 #[rustfmt::skip]
-static SUFFIX_FORM: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+static SUFFIX_FORM: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     [
         ("й", "nom_m"), ("ший", "nom_m"), ("го", "gen"), ("му", "dat"), ("м", "prep"),
         ("а", "nom_f"), ("ша", "nom_f"), ("га", "nom_f"), ("тя", "nom_f"), ("у", "acc_f"),
@@ -30,7 +31,7 @@ static SUFFIX_FORM: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
 
 /// Acronyms that look like Roman numerals but never are.
 #[rustfmt::skip]
-static STOP_WORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+static STOP_WORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     ["CD", "DVD", "MD", "DC", "MC", "MI", "MM", "DI", "DIV", "DVI", "DL", "CLI", "MIX", "CIV", "LCD"]
         .into_iter()
         .collect()
@@ -61,7 +62,7 @@ pub(crate) fn normalize_ordinals(text: &str) -> String {
     const ROMAN_OR_CYRILLIC: &str = r"(?:Х|І|X|I|V|M|C|D|L){1,8}";
     const CENTURY_NOUN: &str = r"(ст\.|століття|столітті|сторіччя|сторіччі)";
 
-    static CYRILLIC_CENTURY_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static CYRILLIC_CENTURY_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile(&format!(
             r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ])({ROMAN_OR_CYRILLIC})\s*(?:-|–|—)\s*({ROMAN_OR_CYRILLIC})\s*{CENTURY_NOUN}(?![А-Яа-яЄєІіЇїҐґ])"
         ))
@@ -94,7 +95,7 @@ pub(crate) fn normalize_ordinals(text: &str) -> String {
         )
     });
 
-    static CYRILLIC_CENTURY: Lazy<Regex> = Lazy::new(|| {
+    static CYRILLIC_CENTURY: LazyLock<Regex> = LazyLock::new(|| {
         compile(&format!(
             r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ])({ROMAN_OR_CYRILLIC})\s*{CENTURY_NOUN}(?![А-Яа-яЄєІіЇїҐґ])"
         ))
@@ -128,7 +129,7 @@ pub(crate) fn normalize_ordinals(text: &str) -> String {
         format!("{}{}{noun}", cap(m, 1), ordinal_words(value, form))
     });
 
-    static BARE_CENTURY_BEFORE_START: Lazy<Regex> = Lazy::new(|| {
+    static BARE_CENTURY_BEFORE_START: LazyLock<Regex> = LazyLock::new(|| {
         compile(&format!(
             r"(Протягом|протягом|Впродовж|впродовж|Упродовж|упродовж)\s+({ROMAN_OR_CYRILLIC})\s+та\s+початку"
         ))
@@ -140,7 +141,7 @@ pub(crate) fn normalize_ordinals(text: &str) -> String {
         None => whole(m).to_owned(),
     });
 
-    static ORDINAL_SUFFIX: Lazy<Regex> = Lazy::new(|| {
+    static ORDINAL_SUFFIX: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(\d+)(?:-|–|—)(ший|ими|им|ім|ою|ій|ше|ша|ге|га|тє|тя|го|му|й|м|а|у|е|х)",
             r"(?![А-Яа-яЄєІіЇїҐґ])"
@@ -165,21 +166,21 @@ pub(crate) fn normalize_ordinals(text: &str) -> String {
         )
     }
 
-    static ROMAN_CENTURY_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static ROMAN_CENTURY_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"(^|[^A-Za-z])([MDCLXVI]{1,6})\s*(?:-|–|—)\s*([MDCLXVI]{1,6})\s*(?:ст\.|століття)(?![А-Яа-яЄєІіЇїҐґ])",
         )
     });
     let text = sub(&text, &ROMAN_CENTURY_RANGE, |m| roman_pair(m, "nom_n", "століття"));
 
-    static ROMAN_SECTION_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static ROMAN_SECTION_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"(^|[^A-Za-z])([MDCLXVI]{1,6})\s*(?:-|–|—)\s*([MDCLXVI]{1,6})\s*(розд\.|розділ)(?![А-Яа-яЄєІіЇїҐґ])",
         )
     });
     let text = sub(&text, &ROMAN_SECTION_RANGE, |m| roman_pair(m, "nom_m", "розділ"));
 
-    static ROMAN_CENTURY: Lazy<Regex> = Lazy::new(|| {
+    static ROMAN_CENTURY: LazyLock<Regex> = LazyLock::new(|| {
         compile(r"(^|[^A-Za-z])([MDCLXVI]{1,6})\s*(?:ст\.|століття)(?![А-Яа-яЄєІіЇїҐґ])")
     });
     let text = sub(&text, &ROMAN_CENTURY, |m| {
@@ -190,7 +191,7 @@ pub(crate) fn normalize_ordinals(text: &str) -> String {
         format!("{}{} століття", cap(m, 1), ordinal_words(roman_to_int(token), "nom_n"))
     });
 
-    static ROMAN_GROUP: Lazy<Regex> = Lazy::new(|| {
+    static ROMAN_GROUP: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(r"(^|[^A-Za-z])([MDCLXVI]{1,6})\s+(група|групи)(?![А-Яа-яЄєІіЇїҐґ])")
     });
     let text = sub(&text, &ROMAN_GROUP, |m| {
@@ -202,7 +203,7 @@ pub(crate) fn normalize_ordinals(text: &str) -> String {
         format!("{}{} {}", cap(m, 1), ordinal_words(roman_to_int(token), form), cap(m, 3))
     });
 
-    static BARE_ROMAN: Lazy<Regex> = Lazy::new(|| compile(r"\b[MDCLXVI]{2,}\b"));
+    static BARE_ROMAN: LazyLock<Regex> = LazyLock::new(|| compile(r"\b[MDCLXVI]{2,}\b"));
     sub(&text, &BARE_ROMAN, |m| {
         let token = whole(m);
         if STOP_WORDS.contains(token) || !valid_roman(token) {
@@ -214,13 +215,13 @@ pub(crate) fn normalize_ordinals(text: &str) -> String {
 
 /// Reads calendar quarters written with a Roman or Arabic numeral.
 pub(crate) fn normalize_quarters(text: &str) -> String {
-    static ROMAN_QUARTER: Lazy<Regex> = Lazy::new(|| {
+    static ROMAN_QUARTER: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[^A-Za-z])([MDCLXVI]{1,6})\s*(?:кв\.|квартал)",
             r"(?:\s+(\d{3,4})(?:\s*р\.|\s+року)?)?(?![А-Яа-яЄєІіЇїҐґ])"
         ))
     });
-    static NUMERIC_QUARTER: Lazy<Regex> = Lazy::new(|| {
+    static NUMERIC_QUARTER: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[^\d])(\d{1,2})(?:[-–—]?(?:й|ій))?\s*(?:кв\.|квартал)",
             r"(?:\s+(\d{3,4})(?:\s*р\.|\s+року)?)?(?![А-Яа-яЄєІіЇїҐґ])"
@@ -233,7 +234,7 @@ pub(crate) fn normalize_quarters(text: &str) -> String {
         }
         let mut out = format!("{} квартал", ordinal_words(quarter, "nom_m"));
         if let Some(year) = year {
-            out.push_str(&format!(" {} року", ordinal_words(parse_u64(year), "gen")));
+            let _ = write!(out, " {} року", ordinal_words(parse_u64(year), "gen"));
         }
         Some(out)
     }
@@ -260,17 +261,18 @@ pub(crate) fn normalize_quarters(text: &str) -> String {
 
 /// Reads page counts, page numbers and page ranges in bibliographies.
 pub(crate) fn normalize_page_ranges(text: &str, style: RangeStyle) -> String {
-    static BIBLIOGRAPHIC_VOLUMES: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[\s,:;])(У|у|В|в)\s+(\d+)\s+(?:т|Т)(?:т|Т)?\.?([ \t]*)(?=/)"));
-    static PAGE_COUNT: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"(^|(?:-|—)\s+)(\d+)\s+(?:с|С)\.(?=\s*(?::|;|-|—|ISBN|$))"));
-    static PAGE_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static BIBLIOGRAPHIC_VOLUMES: LazyLock<Regex> = LazyLock::new(|| {
+        compile(r"(^|[\s,:;])(У|у|В|в)\s+(\d+)\s+(?:т|Т)(?:т|Т)?\.?([ \t]*)(?=/)")
+    });
+    static PAGE_COUNT: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"(^|(?:-|—)\s+)(\d+)\s+(?:с|С)\.(?=\s*(?::|;|-|—|ISBN|$))"));
+    static PAGE_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґA-Za-z])(?:стор\.|Стор\.|СТОР\.|с\.|С\.|pp?\.)",
             r"\s*(\d+)\s*(?:-|−|–|—)\s*(\d+)(?!\d)"
         ))
     });
-    static SINGLE_PAGE: Lazy<Regex> = Lazy::new(|| {
+    static SINGLE_PAGE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(r"(^|[^А-Яа-яЄєІіЇїҐґA-Za-z])(?:стор|Стор|СТОР|с|С|pp?)\.\s*(\d+)(?!\d)")
     });
 
@@ -332,7 +334,7 @@ struct SectionRange {
 }
 
 #[rustfmt::skip]
-static SECTIONS: Lazy<HashMap<&'static str, SectionRange>> = Lazy::new(|| {
+static SECTIONS: LazyLock<HashMap<&'static str, SectionRange>> = LazyLock::new(|| {
     let gen_f = |compact| SectionRange { compact, genitive: compact, ordinal_form: "gen_f" };
     [
         ("ст", gen_f("статті")),
@@ -355,13 +357,13 @@ static SECTIONS: Lazy<HashMap<&'static str, SectionRange>> = Lazy::new(|| {
 
 /// Reads ranges of articles, clauses, chapters, tables and figures.
 pub(crate) fn normalize_section_ranges(text: &str, style: RangeStyle) -> String {
-    static DOTTED_RANGE: Lazy<Regex> = Lazy::new(|| {
+    static DOTTED_RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґA-Za-z])(пп|підпункти)\.?\s*(\d+(?:\.\d+)+)",
             r"\s*(?:-|−|–|—)\s*(\d+(?:\.\d+)+)(?![\d.])"
         ))
     });
-    static RANGE: Lazy<Regex> = Lazy::new(|| {
+    static RANGE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґA-Za-z])(ст|статті|ч|частини|пп|підпункти|п|пункти|абз|розд|гл|табл|рис)",
             r"\.?\s*(\d+)\s*(?:-|−|–|—)\s*(\d+)(?!\d)"

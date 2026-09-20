@@ -2,8 +2,9 @@
 //! scientific notation, decimals, scale words, versions and bare numbers.
 
 use fancy_regex::Regex;
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::fmt::Write as _;
+use std::sync::LazyLock;
 
 use crate::uktextnorm::lexicon::{Forms, Gender};
 use crate::uktextnorm::morphology::{feminine_last, plural, plural_of};
@@ -44,10 +45,10 @@ fn clock_words(hour: u64, minute: u64, second: Option<u64>, locative: bool) -> S
         hours_words(hour)
     };
     if minute != 0 {
-        out.push_str(&format!(" {}", minutes_words(minute, &MINUTE_FORMS)));
+        let _ = write!(out, " {}", minutes_words(minute, &MINUTE_FORMS));
     }
     if let Some(second) = second.filter(|&s| s != 0) {
-        out.push_str(&format!(" {}", minutes_words(second, &SECOND_FORMS)));
+        let _ = write!(out, " {}", minutes_words(second, &SECOND_FORMS));
     }
     out
 }
@@ -60,38 +61,39 @@ fn governed_by_o(prefix: &str, group1: &str) -> bool {
 
 /// Reads clock times, time zones and ratios.
 pub(crate) fn normalize_time(text: &str, colon_style: ColonStyle) -> String {
-    static VARIABLE_RATIO: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^A-Za-z\d:])(\d+)\s*:\s*([A-Za-z])(?![A-Za-z\d])"));
-    static AM_PM: Lazy<Regex> = Lazy::new(|| {
+    static VARIABLE_RATIO: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^A-Za-z\d:])(\d+)\s*:\s*([A-Za-z])(?![A-Za-z\d])"));
+    static AM_PM: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(r"(^|[^\d:])(\d{1,2}):([0-5]\d)(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)(?![A-Za-z])")
     });
-    static ZONED: Lazy<Regex> = Lazy::new(|| {
+    static ZONED: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^\d:])(\d{1,2}):([0-5]\d)(?::([0-5]\d))?\s*(UTC|GMT)",
             r"(?:\s*([+-])\s*(\d{1,2})(?::?([0-5]\d))?)?(?![A-Za-z\d])"
         ))
     });
-    static OFFSET_ZONED: Lazy<Regex> = Lazy::new(|| {
+    static OFFSET_ZONED: LazyLock<Regex> = LazyLock::new(|| {
         compile(r"(^|[^\d:])(\d{1,2}):([0-5]\d)(?::([0-5]\d))?\s+([+-])(\d{2}):([0-5]\d)(?!\d)")
     });
-    static IANA_ZONED: Lazy<Regex> = Lazy::new(|| {
+    static IANA_ZONED: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^\d:])(\d{1,2}):([0-5]\d)(?::([0-5]\d))?\s+",
             r"([A-Za-z_+-]+/[A-Za-z0-9_+/-]+)(?![A-Za-z0-9_+/-])"
         ))
     });
-    static HMS: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d:])(\d{1,2}):([0-5]\d):([0-5]\d)(?![\d:])"));
-    static O_CLOCK: Lazy<Regex> = Lazy::new(|| {
+    static HMS: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d:])(\d{1,2}):([0-5]\d):([0-5]\d)(?![\d:])"));
+    static O_CLOCK: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"(^|[^А-Яа-яЄєІіЇїҐґ\d])((?:О|о)(?:б)?) (\d{1,2})(?:-|–|—)?(?:й|ій|а|ої)(?![А-Яа-яЄєІіЇїҐґ])",
         )
     });
-    static DAY_PERIOD: Lazy<Regex> = Lazy::new(|| {
+    static DAY_PERIOD: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(r"(^|[^\d:])(\d{1,2}):([0-5]\d)\s+(ранку|дня|вечора|ночі)(?![А-Яа-яЄєІіЇїҐґ\d:])")
     });
-    static HM: Lazy<Regex> = Lazy::new(|| compile(r"(^|[^\d:])(\d{1,2}):([0-5]\d)(?![\d:])"));
-    static RATIO: Lazy<Regex> = Lazy::new(|| compile(r"(^|[^\d:])(\d+):(\d+)(?![\d:])"));
+    static HM: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d:])(\d{1,2}):([0-5]\d)(?![\d:])"));
+    static RATIO: LazyLock<Regex> = LazyLock::new(|| compile(r"(^|[^\d:])(\d+):(\d+)(?![\d:])"));
 
     let text = sub(text, &VARIABLE_RATIO, |m| {
         format!(
@@ -152,9 +154,9 @@ pub(crate) fn normalize_time(text: &str, colon_style: ColonStyle) -> String {
         );
         if matched(m, 6) {
             let sign = if cap(m, 6) == "+" { "плюс " } else { "мінус " };
-            out.push_str(&format!(" {sign}{}", hours_words(offset)));
+            let _ = write!(out, " {sign}{}", hours_words(offset));
             if offset_minutes != 0 {
-                out.push_str(&format!(" {}", minutes_words(offset_minutes, &MINUTE_FORMS)));
+                let _ = write!(out, " {}", minutes_words(offset_minutes, &MINUTE_FORMS));
             }
         }
         out
@@ -176,14 +178,14 @@ pub(crate) fn normalize_time(text: &str, colon_style: ColonStyle) -> String {
             hours_words(offset)
         );
         if offset_minutes != 0 {
-            out.push_str(&format!(" {}", minutes_words(offset_minutes, &MINUTE_FORMS)));
+            let _ = write!(out, " {}", minutes_words(offset_minutes, &MINUTE_FORMS));
         }
         out
     });
 
     let text = sub(&text, &IANA_ZONED, |m| {
         #[rustfmt::skip]
-        static ZONE_NAMES: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+        static ZONE_NAMES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
             [
                 ("europe/kyiv", "за київським часом"),
                 ("europe/london", "за лондонським часом"),
@@ -347,8 +349,8 @@ pub(crate) fn normalize_fractions(text: &str) -> String {
         format!("{}{sign}{} {}", cap(m, 1), say_fraction(numerator, denominator), unit.decimal)
     });
 
-    static MIXED_NUMBER: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d.,/])([+\-−]?)(\d+) (\d+)/(\d+)\b"));
+    static MIXED_NUMBER: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d.,/])([+\-−]?)(\d+) (\d+)/(\d+)\b"));
     let text = sub(&text, &MIXED_NUMBER, |m| {
         let values = [3, 4, 5].map(|i| try_parse_u64(cap(m, i)));
         let [Some(whole_part), Some(numerator), Some(denominator)] = values else {
@@ -366,8 +368,8 @@ pub(crate) fn normalize_fractions(text: &str) -> String {
         )
     });
 
-    static PLAIN_FRACTION: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d.,/])([+\-−]?)(\d+)/(\d+)\b"));
+    static PLAIN_FRACTION: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d.,/])([+\-−]?)(\d+)/(\d+)\b"));
     sub(&text, &PLAIN_FRACTION, |m| {
         let (Some(numerator), Some(denominator)) =
             (try_parse_u64(cap(m, 3)), try_parse_u64(cap(m, 4)))
@@ -391,15 +393,16 @@ fn spoken_sign(sign: &str) -> &'static str {
 
 /// Reads percentages, agreeing the noun with the number.
 pub(crate) fn normalize_percent(text: &str) -> String {
-    static GOVERNED: Lazy<Regex> = Lazy::new(|| {
+    static GOVERNED: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ-])(Близько|близько|Після|після|Менше|менше|Більше|більше",
             r"|Без|без|Від|від|До|до|Із|із)\s+([+\-]?\d+(?:[.,]\d+)?)\s*%"
         ))
     });
-    static ADJACENT_SIGNED: Lazy<Regex> = Lazy::new(|| compile(r"([+\-])(\d+(?:[.,]\d+)?)\s*%"));
-    static PERCENT: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d.,+\-])([+\-]?\d+(?:[.,]\d+)?)\s*%"));
+    static ADJACENT_SIGNED: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"([+\-])(\d+(?:[.,]\d+)?)\s*%"));
+    static PERCENT: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d.,+\-])([+\-]?\d+(?:[.,]\d+)?)\s*%"));
 
     let text = sub(text, &GOVERNED, |m| {
         let token = cap(m, 3);
@@ -451,7 +454,7 @@ pub(crate) fn normalize_percent(text: &str) -> String {
 }
 
 /// Unit keys that are a single atom, with no `/`, `·`, `-` or space.
-static ATOMIC_UNIT_ALT: Lazy<String> = Lazy::new(|| {
+static ATOMIC_UNIT_ALT: LazyLock<String> = LazyLock::new(|| {
     regex_alternation(
         MEASUREMENTS
             .keys()
@@ -460,7 +463,8 @@ static ATOMIC_UNIT_ALT: Lazy<String> = Lazy::new(|| {
     )
 });
 
-static ATOM_PATTERN: Lazy<String> = Lazy::new(|| format!("(?:{})(?:²|³|2|3)?", *ATOMIC_UNIT_ALT));
+static ATOM_PATTERN: LazyLock<String> =
+    LazyLock::new(|| format!("(?:{})(?:²|³|2|3)?", *ATOMIC_UNIT_ALT));
 
 /// Reads quantities with units, including tolerances and unit formulas.
 pub(crate) fn normalize_measurements(text: &str) -> String {
@@ -553,22 +557,21 @@ pub(crate) fn normalize_measurements(text: &str) -> String {
 /// Reads one factor of a unit formula, stripping a squared or cubed exponent.
 fn factor_words(factor: &str, quantity: &str, first: bool, denominator: bool) -> Option<String> {
     let mut exponent = "";
-    let unit = match MEASUREMENTS.get(factor) {
-        Some(unit) => Some(*unit),
-        None => {
-            let mut found = None;
-            for (suffix, words) in
-                [("²", " у квадраті"), ("³", " у кубі"), ("2", " у квадраті"), ("3", " у кубі")]
-            {
-                let Some(base) = factor.strip_suffix(suffix) else { continue };
-                if let Some(unit) = MEASUREMENTS.get(base) {
-                    found = Some(*unit);
-                    exponent = words;
-                }
-                break;
+    let unit = if let Some(unit) = MEASUREMENTS.get(factor) {
+        Some(*unit)
+    } else {
+        let mut found = None;
+        for (suffix, words) in
+            [("²", " у квадраті"), ("³", " у кубі"), ("2", " у квадраті"), ("3", " у кубі")]
+        {
+            let Some(base) = factor.strip_suffix(suffix) else { continue };
+            if let Some(unit) = MEASUREMENTS.get(base) {
+                found = Some(*unit);
+                exponent = words;
             }
-            found
+            break;
         }
+        found
     }?;
     if first {
         return Some(format!("{}{exponent}", read_measurement_quantity(quantity, unit)));
@@ -593,24 +596,24 @@ fn factor_words(factor: &str, quantity: &str, first: bool, denominator: bool) ->
 /// Reads concentrations, blood pressure, temperatures, dosing frequency and
 /// `№` numbers.
 pub(crate) fn normalize_medical(text: &str) -> String {
-    static CONCENTRATION: Lazy<Regex> = Lazy::new(|| {
+    static CONCENTRATION: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(
             r"(^|[^\d.,])(\d+(?:[.,]\d+)?)\s*(мг|мл|г)\s*/\s*(мл|л)(?![A-Za-zА-Яа-яЄєІіЇїҐґ])",
         )
     });
-    static PRESSURE: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"(^|[^\d.,])(\d{2,3})\s*/\s*(\d{2,3})\s*мм\s*рт\.?\s*ст\.?"));
-    static LABELLED_PRESSURE: Lazy<Regex> = Lazy::new(|| {
+    static PRESSURE: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"(^|[^\d.,])(\d{2,3})\s*/\s*(\d{2,3})\s*мм\s*рт\.?\s*ст\.?"));
+    static LABELLED_PRESSURE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(r"(^|[^А-Яа-яЄєІіЇїҐґ\d])(тиск\s+)(\d{2,3})\s*/\s*(\d{2,3})\s*мм\s*рт\.?\s*ст\.?")
     });
-    static FREQUENCY: Lazy<Regex> = Lazy::new(|| {
+    static FREQUENCY: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ\d])(\d+)\s*(?:р\.|раз(?:и|ів)?)",
             r"(\s+на\s+(?:день|добу|тиждень|місяць))(?![А-Яа-яЄєІіЇїҐґ])"
         ))
     });
-    static NUMBER_SIGN: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^А-Яа-яЄєІіЇїҐґ\d])№\s*(\d{1,4})(?![\d/])"));
+    static NUMBER_SIGN: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^А-Яа-яЄєІіЇїҐґ\d])№\s*(\d{1,4})(?![\d/])"));
 
     let number = SIGNED_NUMBER;
     let temperature_unit: &str = &TEMPERATURE_UNIT_PATTERN;
@@ -713,23 +716,20 @@ fn lower_superscripts(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut in_exponent = false;
     for cp in text.chars() {
-        match digit(cp) {
-            Some(plain) => {
-                if !in_exponent {
-                    // A superscript only starts an exponent right after a digit.
-                    if !out.ends_with(|c: char| c.is_ascii_digit()) {
-                        out.push(cp);
-                        continue;
-                    }
-                    out.push('^');
-                    in_exponent = true;
+        if let Some(plain) = digit(cp) {
+            if !in_exponent {
+                // A superscript only starts an exponent right after a digit.
+                if !out.ends_with(|c: char| c.is_ascii_digit()) {
+                    out.push(cp);
+                    continue;
                 }
-                out.push(plain);
+                out.push('^');
+                in_exponent = true;
             }
-            None => {
-                in_exponent = false;
-                out.push(cp);
-            }
+            out.push(plain);
+        } else {
+            in_exponent = false;
+            out.push(cp);
         }
     }
     out
@@ -783,7 +783,7 @@ pub(crate) fn normalize_scientific(text: &str, range_style: RangeStyle) -> Strin
     let unit_suffix = format!(r"(?:\s*({unit_alt}))?(?![A-Za-zА-Яа-яЄєІіЇїҐґ])");
     let optional_unit = format!(r"(?:\s*({unit_alt}))?");
 
-    static INVERSE_CELSIUS_POWER: Lazy<Regex> = Lazy::new(|| {
+    static INVERSE_CELSIUS_POWER: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"(^|[^\d])([+-]?\d+(?:[.,]\d+)?)\s*(?:×|·|x|X|\*)\s*10−(\d+)\s*°[CС](?:−|-)(\d+)(?!\d)",
         )
@@ -821,7 +821,7 @@ pub(crate) fn normalize_scientific(text: &str, range_style: RangeStyle) -> Strin
         None => whole(m).to_owned(),
     });
 
-    static E_NOTATION: Lazy<Regex> = Lazy::new(|| {
+    static E_NOTATION: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ\d.,])([+-]?\d+(?:[.,]\d+)?)[eE]([+-]?\d+)(?![A-Za-zА-Яа-яЄєІіЇїҐґ\d])",
         )
@@ -874,7 +874,7 @@ pub(crate) fn normalize_scientific(text: &str, range_style: RangeStyle) -> Strin
             None => whole(m).to_owned(),
         });
 
-    static POWER: Lazy<Regex> = Lazy::new(|| {
+    static POWER: LazyLock<Regex> = LazyLock::new(|| {
         compile(r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ\d.,])([+-]?\d+(?:[.,]\d+)?)\s*\^\s*([+-]?\d+)(?!\d)")
     });
     sub(&text, &POWER, |m| {
@@ -891,19 +891,19 @@ pub(crate) fn normalize_scientific(text: &str, range_style: RangeStyle) -> Strin
 
 /// Reads a `+` between digits as "plus".
 pub(crate) fn normalize_math(text: &str) -> String {
-    static RE: Lazy<Regex> = Lazy::new(|| compile(r"(\d)\s*\+\s*(?=\d)"));
+    static RE: LazyLock<Regex> = LazyLock::new(|| compile(r"(\d)\s*\+\s*(?=\d)"));
     sub(text, &RE, |m| format!("{} плюс ", cap(m, 1)))
 }
 
 /// Reads decimal numbers.
 pub(crate) fn normalize_decimals(text: &str) -> String {
-    static RE: Lazy<Regex> = Lazy::new(|| compile(r"\b(\d+)[,.](\d+)\b"));
+    static RE: LazyLock<Regex> = LazyLock::new(|| compile(r"\b(\d+)[,.](\d+)\b"));
     sub(text, &RE, |m| decimal_to_words_or_digits(cap(m, 1), cap(m, 2)))
 }
 
 /// Reads a currency amount with more decimals than the currency has.
 pub(crate) fn normalize_overprecise_currency_decimals(text: &str) -> String {
-    static RE: Lazy<Regex> = Lazy::new(|| {
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(r"\b(\d+),(\d{3,})(?=\s*(?:грн|UAH|USD|EUR|GBP|[$€£₴]|долар|євро|фунт))")
     });
     sub(text, &RE, |m| {
@@ -923,7 +923,7 @@ struct Multiplier {
 }
 
 #[rustfmt::skip]
-static MULTIPLIERS: Lazy<HashMap<&'static str, Multiplier>> = Lazy::new(|| {
+static MULTIPLIERS: LazyLock<HashMap<&'static str, Multiplier>> = LazyLock::new(|| {
     [
         ("тис", Multiplier {
             forms: Forms { one: "тисяча", few: "тисячі", many: "тисяч" },
@@ -955,15 +955,15 @@ static MULTIPLIERS: Lazy<HashMap<&'static str, Multiplier>> = Lazy::new(|| {
 /// `governed_only` stops after the prepositional forms, which the pipeline runs
 /// before currency handling.
 pub(crate) fn normalize_multipliers(text: &str, governed_only: bool) -> String {
-    static GOVERNED: Lazy<Regex> = Lazy::new(|| {
+    static GOVERNED: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ-])(Близько|близько|Після|після|Менше|менше|Більше|більше",
             r"|Серед|серед|Без|без|Від|від|До|до|Із|із)\s+(\d+(?:[.,]\d+)?)\s*",
             r"(тис|млн|млрд|трлн)\.?(?![а-яіїєґ])"
         ))
     });
-    static RE: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\b(\d+(?:[.,]\d+)?)\s*(тис|млн|млрд|трлн)(\.?)(?![а-яіїєґ])"));
+    static RE: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\b(\d+(?:[.,]\d+)?)\s*(тис|млн|млрд|трлн)(\.?)(?![а-яіїєґ])"));
 
     let text = sub(text, &GOVERNED, |m| {
         let key = lower_text(cap(m, 4));
@@ -1012,19 +1012,20 @@ pub(crate) fn normalize_multipliers(text: &str, governed_only: bool) -> String {
 
 /// Reads dotted version numbers and short alphanumeric references.
 pub(crate) fn normalize_versions(text: &str) -> String {
-    static NAMED: Lazy<Regex> = Lazy::new(|| {
+    static NAMED: LazyLock<Regex> = LazyLock::new(|| {
         compile(concat!(
             r"(^|[\s(\[{:,;])((?:(?:В|в)ерсі(?:я|ї|ю|єю)|(?:Р|р)еліз(?:у|ом)?|(?:В|в)ипуск(?:у|ом)?",
             r"|(?:П|п)ункт(?:у|ом|і|а)?|(?:Р|р)озділ(?:у|ом|і|а)?)\s+)(\d+(?:\.\d+)+)\b"
         ))
     });
-    static AFTER_WORD: Lazy<Regex> =
-        Lazy::new(|| compile(r"\b([A-Za-z][A-Za-z0-9_\-]*\s+)(\d+(?:\.\d+)+)\b"));
-    static V_PREFIX: Lazy<Regex> = Lazy::new(|| compile(r"\b([vV])(\d+(?:\.\d+)+)\b"));
-    static LETTER_DOT_NUMBER: Lazy<Regex> = Lazy::new(|| compile(r"\b([A-Za-z])\.(\d{1,6})\b"));
-    static NUMBER_DOT_SUFFIX: Lazy<Regex> =
-        Lazy::new(|| compile(r"\b(\d+)\.(\d+)([A-Za-z]{1,6})\b"));
-    static DOTTED: Lazy<Regex> = Lazy::new(|| compile(r"\b\d+(?:\.\d+){2,}\b"));
+    static AFTER_WORD: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b([A-Za-z][A-Za-z0-9_\-]*\s+)(\d+(?:\.\d+)+)\b"));
+    static V_PREFIX: LazyLock<Regex> = LazyLock::new(|| compile(r"\b([vV])(\d+(?:\.\d+)+)\b"));
+    static LETTER_DOT_NUMBER: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b([A-Za-z])\.(\d{1,6})\b"));
+    static NUMBER_DOT_SUFFIX: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b(\d+)\.(\d+)([A-Za-z]{1,6})\b"));
+    static DOTTED: LazyLock<Regex> = LazyLock::new(|| compile(r"\b\d+(?:\.\d+){2,}\b"));
 
     let text =
         sub(text, &NAMED, |m| format!("{}{}{}", cap(m, 1), cap(m, 2), read_dotted(cap(m, 3))));
@@ -1052,13 +1053,13 @@ pub(crate) fn normalize_versions(text: &str) -> String {
 
 /// Reads a leading minus sign as "minus".
 pub(crate) fn normalize_negatives(text: &str) -> String {
-    static RE: Lazy<Regex> = Lazy::new(|| compile(r"(^|[\s(\[])(?:-|−|–|—)(\d)"));
+    static RE: LazyLock<Regex> = LazyLock::new(|| compile(r"(^|[\s(\[])(?:-|−|–|—)(\d)"));
     sub(text, &RE, |m| format!("{}мінус {}", cap(m, 1), cap(m, 2)))
 }
 
 /// Reads every remaining bare number.
 pub(crate) fn normalize_text_with_numbers(text: &str) -> String {
-    static RE: Lazy<Regex> = Lazy::new(|| compile(r"\b\d+\b"));
+    static RE: LazyLock<Regex> = LazyLock::new(|| compile(r"\b\d+\b"));
     sub(text, &RE, |m| {
         let digits = whole(m);
         if digits.len() > 1 && digits.starts_with('0') {

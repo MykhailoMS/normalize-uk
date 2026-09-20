@@ -66,7 +66,7 @@ pub(crate) fn compact_spaces_lower(text: &str) -> String {
 
 /// Uppercases and keeps only ASCII alphanumerics, for checksum validation.
 pub(crate) fn compact_ascii_alnum_upper(value: &str) -> String {
-    value.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_uppercase()).collect()
+    value.chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_uppercase()).collect()
 }
 
 pub(crate) fn has_ascii_digit(text: &str) -> bool {

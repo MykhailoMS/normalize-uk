@@ -127,7 +127,7 @@ pub(crate) fn smile_at(text: &str, pos: usize) -> Option<usize> {
         i += 1;
     }
     let mut count = 0;
-    while count < 3 && matches!(bytes.get(i), Some(b'(') | Some(b')')) {
+    while count < 3 && matches!(bytes.get(i), Some(b'(' | b')')) {
         i += 1;
         count += 1;
     }

@@ -53,7 +53,7 @@ fn check_span_at(name: &str, spans: &[UncertainSpan], index: usize, text: &str) 
     match spans.get(index) {
         Some(span) if span.text == text => {}
         Some(span) => {
-            fail(format!("{name}\n  expected span {index}: {text}\n  actual: {}", span.text))
+            fail(format!("{name}\n  expected span {index}: {text}\n  actual: {}", span.text));
         }
         None => fail(format!("{name}\n  missing span {index}: {text}")),
     }
@@ -117,7 +117,7 @@ fn reference_assertions() {
 fn run() {
     check(
         "number",
-        number_to_words(1234567),
+        number_to_words(1_234_567),
         "один мільйон двісті тридцять чотири тисячі п'ятсот шістдесят сім",
     );
     check("ordinal", number_to_ordinal_words(21, OrdinalForm::NomF), "двадцять перша");
@@ -639,7 +639,7 @@ fn run() {
     );
     check(
         "unicode kelvin sign",
-        normalize_with("273 K", &range_options),
+        normalize_with("273 \u{212a}", &range_options),
         "двісті сімдесят три кельвіни",
     );
     check(

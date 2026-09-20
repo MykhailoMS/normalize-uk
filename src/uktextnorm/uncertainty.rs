@@ -1,8 +1,8 @@
 //! Reporting the places where normalization had to guess.
 
 use fancy_regex::{Captures, Regex};
-use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
 use super::lexicon;
 use super::patterns::UNIT_ALT;
@@ -131,7 +131,7 @@ fn decimal_value(token: &str) -> Option<f64> {
 
 /// Words that are legitimate after a number and so are not unknown units.
 #[rustfmt::skip]
-static KNOWN_UNIT_WORDS: Lazy<HashSet<String>> = Lazy::new(|| {
+static KNOWN_UNIT_WORDS: LazyLock<HashSet<String>> = LazyLock::new(|| {
     let mut out: HashSet<String> = [
         "грн", "коп", "btc", "eth", "usdt", "bnb", "у", "в", "і", "й", "та", "до", "від", "на",
         "за", "з", "із", "зі", "по", "для", "р", "рр", "тис", "млн", "млрд", "трлн", "рік",
@@ -158,7 +158,7 @@ static KNOWN_UNIT_WORDS: Lazy<HashSet<String>> = Lazy::new(|| {
 
 /// Roman-looking acronyms that are never numerals.
 #[rustfmt::skip]
-static ROMAN_STOP: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+static ROMAN_STOP: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     ["CD", "DVD", "MD", "DC", "MC", "MI", "MM", "DI", "DIV", "MIX", "CIV", "LCD"]
         .into_iter()
         .collect()
@@ -166,7 +166,7 @@ static ROMAN_STOP: Lazy<HashSet<&'static str>> = Lazy::new(|| {
 
 /// Timezone names the normalizer knows how to read.
 #[rustfmt::skip]
-static SUPPORTED_IANA_ZONES: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+static SUPPORTED_IANA_ZONES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
         "europe/kyiv", "europe/london", "europe/warsaw", "america/new_york",
         "america/los_angeles", "asia/tokyo",
@@ -177,7 +177,7 @@ static SUPPORTED_IANA_ZONES: Lazy<HashSet<&'static str>> = Lazy::new(|| {
 
 /// Abbreviations with several common expansions.
 #[rustfmt::skip]
-static MULTISENSE: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+static MULTISENSE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     [
         ("р", "рік / рядок / річка"),
         ("м", "метр / місто"),
@@ -194,7 +194,7 @@ static MULTISENSE: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
 
 /// Prepositions that already fix the case of the number after them.
 #[rustfmt::skip]
-static GOVERNORS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+static GOVERNORS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
         "близько", "понад", "менше", "більше", "від", "до", "із", "з", "без", "після", "к", "у",
         "в", "о", "об", "при", "над", "під", "перед", "між",
@@ -213,11 +213,13 @@ const CYRILLIC: &str = r"\u{0400}-\u{04FF}";
 /// let spans = flag_uncertain("10:30, $12");
 /// assert!(!spans.is_empty());
 /// ```
+#[must_use]
 pub fn flag_uncertain(text: &str) -> Vec<UncertainSpan> {
     flag_uncertain_impl(text, None)
 }
 
 /// Like [`flag_uncertain`], but omits the warnings the options already resolve.
+#[must_use]
 pub fn flag_uncertain_with(text: &str, options: &NormalizeOptions) -> Vec<UncertainSpan> {
     flag_uncertain_impl(text, Some(options))
 }
@@ -225,8 +227,9 @@ pub fn flag_uncertain_with(text: &str, options: &NormalizeOptions) -> Vec<Uncert
 fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<UncertainSpan> {
     let mut c = Collector::new(text);
 
-    static AMBIGUOUS_NUMERIC_DATE: Lazy<Regex> =
-        Lazy::new(|| compile(r"\b(?:0?[1-9]|1[0-2])[./-](?:0?[1-9]|1[0-2])[./-](?:\d{2}|\d{4})\b"));
+    static AMBIGUOUS_NUMERIC_DATE: LazyLock<Regex> = LazyLock::new(|| {
+        compile(r"\b(?:0?[1-9]|1[0-2])[./-](?:0?[1-9]|1[0-2])[./-](?:\d{2}|\d{4})\b")
+    });
     let date_order_unresolved =
         options.is_none_or(|o| o.numeric_date_order == NumericDateOrder::PreserveAmbiguous);
     if date_order_unresolved {
@@ -241,8 +244,8 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         });
     }
 
-    static AMBIGUOUS_COLON: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d:])(\d{1,2}):([0-5]\d)(?![\d:])"));
+    static AMBIGUOUS_COLON: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d:])(\d{1,2}):([0-5]\d)(?![\d:])"));
     if options.is_none_or(|o| o.colon_style == ColonStyle::Contextual) {
         each(text, &AMBIGUOUS_COLON, |m| {
             let hour = parse_i32(cap(m, 2));
@@ -261,8 +264,8 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         });
     }
 
-    static AMBIGUOUS_CURRENCY_SYMBOL: Lazy<Regex> =
-        Lazy::new(|| compile(r"(?:\$|¥)\s*\d+(?:[.,]\d+)?"));
+    static AMBIGUOUS_CURRENCY_SYMBOL: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(?:\$|¥)\s*\d+(?:[.,]\d+)?"));
     if options.is_none_or(|o| o.currency_symbol_policy == CurrencySymbolPolicy::PreserveAmbiguous) {
         each(text, &AMBIGUOUS_CURRENCY_SYMBOL, |m| {
             c.add(
@@ -275,8 +278,8 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         });
     }
 
-    static NUMERIC_DATE: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d])(\d{1,2})\.(\d{1,2})\.(\d{3,4})(?![\d])"));
+    static NUMERIC_DATE: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d])(\d{1,2})\.(\d{1,2})\.(\d{3,4})(?![\d])"));
     each(text, &NUMERIC_DATE, |m| {
         let day = parse_i32(cap(m, 2));
         let month = parse_i32(cap(m, 3));
@@ -295,8 +298,8 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         }
     });
 
-    static INVALID_ISO_DATE: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d])(\d{4})-(\d{1,2})(?:-(\d{1,2}))?(?!\d)"));
+    static INVALID_ISO_DATE: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d])(\d{4})-(\d{1,2})(?:-(\d{1,2}))?(?!\d)"));
     each(text, &INVALID_ISO_DATE, |m| {
         let year = parse_i32(cap(m, 2));
         let month = parse_i32(cap(m, 3));
@@ -307,8 +310,8 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         c.add(cap_start(m, 2), end_of(m), "invalid ISO date", Cat::InvalidDate, Sev::Error);
     });
 
-    static ISO_WEEK_CANDIDATE: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\b(\d{4})-W(\d{2})(?:-(\d))?\b"));
+    static ISO_WEEK_CANDIDATE: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\b(\d{4})-W(\d{2})(?:-(\d))?\b"));
     each(text, &ISO_WEEK_CANDIDATE, |m| {
         let week = parse_i32(cap(m, 2));
         let day = if matched(m, 3) { parse_i32(cap(m, 3)) } else { 1 };
@@ -318,7 +321,8 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         c.add(cap_start(m, 0), end_of(m), "invalid ISO week date", Cat::InvalidDate, Sev::Error);
     });
 
-    static ISO_ORDINAL_CANDIDATE: Lazy<Regex> = Lazy::new(|| compile(r"\b(\d{4})-(\d{3})\b"));
+    static ISO_ORDINAL_CANDIDATE: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b(\d{4})-(\d{3})\b"));
     each(text, &ISO_ORDINAL_CANDIDATE, |m| {
         let year = parse_i32(cap(m, 1));
         let day = parse_i32(cap(m, 2));
@@ -329,8 +333,8 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         c.add(cap_start(m, 0), end_of(m), "invalid ISO ordinal date", Cat::InvalidDate, Sev::Error);
     });
 
-    static TIMEZONE_OFFSET: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"(?:UTC|GMT)\s*([+-])(\d{2}):?(\d{2})(?!\d)"));
+    static TIMEZONE_OFFSET: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"(?:UTC|GMT)\s*([+-])(\d{2}):?(\d{2})(?!\d)"));
     each(text, &TIMEZONE_OFFSET, |m| {
         let hour = parse_i32(cap(m, 2));
         let minute = parse_i32(cap(m, 3));
@@ -340,8 +344,8 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         c.add(cap_start(m, 0), end_of(m), "invalid timezone offset", Cat::Time, Sev::Error);
     });
 
-    static BARE_TIMEZONE_OFFSET: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[\s(])([+-])(\d{2}):(\d{2})(?!\d)"));
+    static BARE_TIMEZONE_OFFSET: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[\s(])([+-])(\d{2}):(\d{2})(?!\d)"));
     each(text, &BARE_TIMEZONE_OFFSET, |m| {
         let hour = parse_i32(cap(m, 3));
         let minute = parse_i32(cap(m, 4));
@@ -358,7 +362,7 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     });
 
-    static IANA_ZONE: Lazy<Regex> = Lazy::new(|| {
+    static IANA_ZONE: LazyLock<Regex> = LazyLock::new(|| {
         compile(r"(\b\d{1,2}:[0-5]\d(?::[0-5]\d)?\s+)([A-Za-z_+-]+/[A-Za-z0-9_+/-]+)\b")
     });
     each(text, &IANA_ZONE, |m| {
@@ -375,8 +379,8 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     });
 
-    static SINGLE_COMMA_GROUP: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d.,])(\d{1,3},\d{3})(?![\d])"));
+    static SINGLE_COMMA_GROUP: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d.,])(\d{1,3},\d{3})(?![\d])"));
     each(text, &SINGLE_COMMA_GROUP, |m| {
         let start = cap_start(m, 2);
         c.add(
@@ -388,8 +392,8 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     });
 
-    static INVALID_TIME: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d:])(\d{1,3}):(\d{2})(?::(\d{2}))?(?![\d:])"));
+    static INVALID_TIME: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d:])(\d{1,3}):(\d{2})(?::(\d{2}))?(?![\d:])"));
     each(text, &INVALID_TIME, |m| {
         let hour = parse_i32(cap(m, 2));
         let minute = parse_i32(cap(m, 3));
@@ -403,7 +407,7 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         c.add(cap_start(m, 2), end_of(m), "invalid clock time", Cat::Time, Sev::Error);
     });
 
-    static INVALID_AMPM: Lazy<Regex> = Lazy::new(|| {
+    static INVALID_AMPM: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(r"(^|[^\d:])(\d{1,2}):([0-5]\d)(?::([0-5]\d))?\s*(AM|PM)(?![A-Za-z])")
     });
     each(text, &INVALID_AMPM, |m| {
@@ -413,7 +417,8 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         c.add(cap_start(m, 2), end_of(m), "invalid 12-hour clock time", Cat::Time, Sev::Error);
     });
 
-    static ZERO_FRACTION: Lazy<Regex> = Lazy::new(|| compile(r"(^|[^\d/])([+\-−]?\d+/0+)(?!\d)"));
+    static ZERO_FRACTION: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d/])([+\-−]?\d+/0+)(?!\d)"));
     each(text, &ZERO_FRACTION, |m| {
         let start = cap_start(m, 2);
         c.add(
@@ -425,9 +430,9 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     });
 
-    static MALFORMED_SCIENTIFIC: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^A-Za-z\d])([+\-]?\d+(?:[.,]\d+)?[eE][+\-]?)(?!\d)"));
-    static IEEE_REVISION: Lazy<Regex> = Lazy::new(|| compile(r"^802\.\d{1,2}[eE]$"));
+    static MALFORMED_SCIENTIFIC: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^A-Za-z\d])([+\-]?\d+(?:[.,]\d+)?[eE][+\-]?)(?!\d)"));
+    static IEEE_REVISION: LazyLock<Regex> = LazyLock::new(|| compile(r"^802\.\d{1,2}[eE]$"));
     each(text, &MALFORMED_SCIENTIFIC, |m| {
         if IEEE_REVISION.is_match(cap(m, 2)).unwrap_or(false) {
             return;
@@ -442,7 +447,7 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     });
 
-    static IPV4_LIKE: Lazy<Regex> = Lazy::new(|| {
+    static IPV4_LIKE: LazyLock<Regex> = LazyLock::new(|| {
         compile(
             r"(^|[^\d.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:/(\d{1,3}))?(?::(\d{1,6}))?(?![\d.])",
         )
@@ -463,7 +468,7 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     });
 
-    static GEO_CANDIDATE: Lazy<Regex> = Lazy::new(|| {
+    static GEO_CANDIDATE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"\bgeo\s*:\s*([+\-]?\d{1,3}(?:\.\d+)?)\s*[,;]\s*([+\-]?\d{1,3}(?:\.\d+)?)",
             r"(?:\s*[,;]\s*[+\-]?\d+(?:\.\d+)?)?"
@@ -486,7 +491,7 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     });
 
-    static DMS_CANDIDATE: Lazy<Regex> = Lazy::new(|| {
+    static DMS_CANDIDATE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(r#"(\d{1,3})\s*°\s*(\d{1,2})\s*(?:′|')\s*(\d{1,2})\s*(?:″|")\s*([NSEW])"#)
     });
     each(text, &DMS_CANDIDATE, |m| {
@@ -511,8 +516,8 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     });
 
-    static ABBR: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"(^|[^А-Яа-яЄєІіЇїҐґ])(кв|обл|ст|р|м|с|в|п)\.(?![а-яіїєґ])"));
+    static ABBR: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"(^|[^А-Яа-яЄєІіЇїҐґ])(кв|обл|ст|р|м|с|в|п)\.(?![а-яіїєґ])"));
     each(text, &ABBR, |m| {
         let start = cap_start(m, 2);
         let left = text[..start].trim_end_matches(' ');
@@ -570,7 +575,7 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     }
 
-    static BARE_ROMAN: Lazy<Regex> = Lazy::new(|| compile(r"\b[MDCLXVI]{2,}\b"));
+    static BARE_ROMAN: LazyLock<Regex> = LazyLock::new(|| compile(r"\b[MDCLXVI]{2,}\b"));
     each(text, &BARE_ROMAN, |m| {
         let token = whole(m);
         if ROMAN_STOP.contains(token) || !valid_roman(token) {
@@ -596,24 +601,24 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         };
     }
 
-    static ISBN_CANDIDATE: Lazy<Regex> = Lazy::new(|| {
+    static ISBN_CANDIDATE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(r"\bISBN(?:-1[03])?\s*[:№#]?\s*((?:97[89][ -]?)?[0-9Xx](?:[ -]?[0-9Xx]){8,12})\b")
     });
     checked!(&ISBN_CANDIDATE, 1, valid_isbn, "invalid ISBN checksum or length");
 
-    static ISSN_CANDIDATE: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\bISSN(?:-L)?\s*[:№#]?\s*(\d{4}[ -]?\d{3}[\dXx])\b"));
+    static ISSN_CANDIDATE: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\bISSN(?:-L)?\s*[:№#]?\s*(\d{4}[ -]?\d{3}[\dXx])\b"));
     checked!(&ISSN_CANDIDATE, 1, valid_issn, "invalid ISSN checksum");
 
-    static IBAN_CANDIDATE: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\b[A-Z]{2}[ -]?\d{2}(?:[ -]?[A-Z0-9]){11,30}\b"));
+    static IBAN_CANDIDATE: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\b[A-Z]{2}[ -]?\d{2}(?:[ -]?[A-Z0-9]){11,30}\b"));
     checked!(&IBAN_CANDIDATE, 0, valid_iban, "invalid IBAN checksum or length");
 
-    static VIN_CANDIDATE: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\bVIN\s*[:№#]?\s*([A-HJ-NPR-Z0-9]{17})\b"));
+    static VIN_CANDIDATE: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\bVIN\s*[:№#]?\s*([A-HJ-NPR-Z0-9]{17})\b"));
     checked!(&VIN_CANDIDATE, 1, valid_vin_checksum, "invalid VIN checksum");
 
-    static FULL_CARD_CANDIDATE: Lazy<Regex> = Lazy::new(|| {
+    static FULL_CARD_CANDIDATE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^A-Za-zА-Яа-яЄєІіЇїҐґ])((?:номер\s+картки|картка|картку|картки|карта|карту)",
             r"\s+(\d(?:[ -]?\d){11,18}))(?!\d)"
@@ -633,7 +638,7 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     });
 
-    static UUID_CANDIDATE: Lazy<Regex> = Lazy::new(|| {
+    static UUID_CANDIDATE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(
             r"\b(?:([0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12})|UUID\s*[:=]?\s*([0-9A-Fa-f]{32}))\b",
         )
@@ -652,7 +657,7 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     });
 
-    static HASH_CANDIDATE: Lazy<Regex> = Lazy::new(|| {
+    static HASH_CANDIDATE: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(
             r"\b((?:SHA-?(?:1|224|256|384|512)|SHA3-?(?:256|512)|BLAKE2[bs]|MD5))\s*[:=]?\s*([0-9A-Fa-f]{1,128})\b",
         )
@@ -670,7 +675,7 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     });
 
-    static IDENTIFIER: Lazy<Regex> = Lazy::new(|| {
+    static IDENTIFIER: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(?:№\s*[A-Za-zА-Яа-яЄєІіЇїҐґ0-9]+(?:[-/][A-Za-zА-Яа-яЄєІіЇїҐґ0-9]+)+",
             r"|(?:ЄДРПОУ|РНОКПП|ІПН|ЄРДР)\.?\s*[:№#]?\s*\d{6,20}",
@@ -693,19 +698,19 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     });
 
-    static MALFORMED_EMAIL: Lazy<Regex> =
-        Lazy::new(|| compile(r"\b[A-Za-z0-9._%+\-]+@(?:\s|$|[^\s@.]+(?:\s|$)|[^\s@]*\.\s)"));
+    static MALFORMED_EMAIL: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"\b[A-Za-z0-9._%+\-]+@(?:\s|$|[^\s@.]+(?:\s|$)|[^\s@]*\.\s)"));
     each(text, &MALFORMED_EMAIL, |m| {
         c.add(cap_start(m, 0), end_of(m), "malformed email-like contact", Cat::Web, Sev::Warning);
     });
 
-    static MALFORMED_URL: Lazy<Regex> =
-        Lazy::new(|| compile_i(r"\bhttps?://(?:\s|$)|\bwww\.(?:\s|$)"));
+    static MALFORMED_URL: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\bhttps?://(?:\s|$)|\bwww\.(?:\s|$)"));
     each(text, &MALFORMED_URL, |m| {
         c.add(cap_start(m, 0), end_of(m), "malformed URL-like token", Cat::Web, Sev::Warning);
     });
 
-    static POTENTIAL_UNIT: Lazy<Regex> = Lazy::new(|| {
+    static POTENTIAL_UNIT: LazyLock<Regex> = LazyLock::new(|| {
         compile(&format!(
             r"(^|[^\d.,:A-Za-z\u{{0080}}-\u{{10FFFF}}])(\d+(?:[.,]\d+)?)\s*([A-Za-z{CYRILLIC}]{{1,6}})(?![A-Za-z{CYRILLIC}])"
         ))
@@ -771,8 +776,10 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         c.add(start, end, "unknown unit or unsupported unit spelling", Cat::Unit, Sev::Warning);
     });
 
-    static FOUR_DIGIT: Lazy<Regex> = Lazy::new(|| compile(r"(^|[^\d.,])(\d{4})(?!\d|[.,]\d)"));
-    static YEAR_CUE: Lazy<Regex> = Lazy::new(|| compile(r"^\s*(?:рік|року|році|р\.|рр\.|ст\.)"));
+    static FOUR_DIGIT: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d.,])(\d{4})(?!\d|[.,]\d)"));
+    static YEAR_CUE: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"^\s*(?:рік|року|році|р\.|рр\.|ст\.)"));
     each(text, &FOUR_DIGIT, |m| {
         let n = parse_i32(cap(m, 2));
         if !(1000..=2099).contains(&n) {
@@ -791,12 +798,12 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         c.add(start, end, "four-digit number (year or cardinal?)", Cat::BareNumber, Sev::Warning);
     });
 
-    static CUE_AFTER: Lazy<Regex> = Lazy::new(|| {
+    static CUE_AFTER: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(&format!(r"^\s*(?:{}|%|грн|коп|рік|року|році|тис|млн|млрд|[-–—])", *UNIT_ALT))
     });
-    static TRAILING_WORD: Lazy<Regex> = Lazy::new(|| compile(r"([А-Яа-яЄєІіЇїҐґ]+)$"));
-    static SHORT_NUMBER: Lazy<Regex> =
-        Lazy::new(|| compile(r"(^|[^\d.,:%\-])(\d{1,4})(?![\d.,:%/\-])"));
+    static TRAILING_WORD: LazyLock<Regex> = LazyLock::new(|| compile(r"([А-Яа-яЄєІіЇїҐґ]+)$"));
+    static SHORT_NUMBER: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"(^|[^\d.,:%\-])(\d{1,4})(?![\d.,:%/\-])"));
     each(text, &SHORT_NUMBER, |m| {
         let start = cap_start(m, 2);
         let digits = cap(m, 2);
@@ -822,7 +829,7 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
         );
     });
 
-    static AGREEMENT: Lazy<Regex> = Lazy::new(|| {
+    static AGREEMENT: LazyLock<Regex> = LazyLock::new(|| {
         compile_i(concat!(
             r"(^|[^А-Яа-яЄєІіЇїҐґ-])(близько|понад|перед|між|над|під|при|після|без|від|до|із",
             r"|у|в|на|з)\s+(\d{1,6})\s+([^\s\d,.;:!?()]{3,})"
@@ -847,7 +854,7 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
     });
 
     // Numbers inside a well-formed IP address are not bare numbers or dates.
-    static ACCEPTED_IPV4: Lazy<Regex> = Lazy::new(|| {
+    static ACCEPTED_IPV4: LazyLock<Regex> = LazyLock::new(|| {
         compile(r"\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:/(\d{1,3}))?(?::(\d{1,5}))?\b")
     });
     let mut accepted_networks: Vec<(usize, usize)> = Vec::new();

@@ -1,8 +1,8 @@
 //! Mixed letter-and-digit tokens: English words, technical tokens and Cyrillic
 //! identifiers such as `КС-19`.
 
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use fancy_regex::Regex;
 
@@ -15,7 +15,7 @@ use crate::uktextnorm::text::{
 
 /// How each Latin letter is named when read aloud in Ukrainian.
 #[rustfmt::skip]
-static LATIN_LETTER_NAMES: Lazy<HashMap<char, &'static str>> = Lazy::new(|| {
+static LATIN_LETTER_NAMES: LazyLock<HashMap<char, &'static str>> = LazyLock::new(|| {
     [
         ('a', "ей"), ('b', "бі"), ('c', "сі"), ('d', "ді"), ('e', "і"), ('f', "еф"),
         ('g', "джі"), ('h', "ейч"), ('i', "ай"), ('j', "джей"), ('k', "кей"), ('l', "ел"),
@@ -49,8 +49,8 @@ fn read_ascii_digit_run(run: &str) -> String {
 /// Replaces known English words with their Ukrainian reading and spells out
 /// unknown all-caps Latin acronyms.
 pub(crate) fn normalize_english(text: &str, vocabulary: &HashMap<String, String>) -> String {
-    static WORD: Lazy<Regex> = Lazy::new(|| compile(r"\b[A-Za-z][A-Za-z'’-]*\b"));
-    static ACRONYM: Lazy<Regex> = Lazy::new(|| compile(r"\b[A-Z]+\b"));
+    static WORD: LazyLock<Regex> = LazyLock::new(|| compile(r"\b[A-Za-z][A-Za-z'’-]*\b"));
+    static ACRONYM: LazyLock<Regex> = LazyLock::new(|| compile(r"\b[A-Z]+\b"));
     let text = sub(text, &WORD, |m| {
         let low = lower_text(whole(m));
         vocabulary
@@ -72,12 +72,13 @@ pub(crate) fn normalize_english(text: &str, vocabulary: &HashMap<String, String>
 /// Reads technical tokens such as `IPv6`, `5G`, `3D`, `x86` and `21st`, then
 /// splits any remaining mixed alphanumeric token into its runs.
 pub(crate) fn normalize_technical_alphanumeric(text: &str) -> String {
-    static INTERNET_PROTOCOL: Lazy<Regex> = Lazy::new(|| compile_i(r"\bIPv([46])\b"));
-    static MOBILE_GENERATION: Lazy<Regex> = Lazy::new(|| compile(r"\b(\d+)G\b"));
-    static DIMENSION: Lazy<Regex> = Lazy::new(|| compile(r"\b(\d+)D\b"));
-    static X86_FAMILY: Lazy<Regex> = Lazy::new(|| compile_i(r"\bx(86|64)\b"));
-    static ENGLISH_ORDINAL: Lazy<Regex> = Lazy::new(|| compile_i(r"\b(\d+)(?:st|nd|rd|th)\b"));
-    static MIXED: Lazy<Regex> = Lazy::new(|| compile(r"\b[A-Za-z0-9]+\b"));
+    static INTERNET_PROTOCOL: LazyLock<Regex> = LazyLock::new(|| compile_i(r"\bIPv([46])\b"));
+    static MOBILE_GENERATION: LazyLock<Regex> = LazyLock::new(|| compile(r"\b(\d+)G\b"));
+    static DIMENSION: LazyLock<Regex> = LazyLock::new(|| compile(r"\b(\d+)D\b"));
+    static X86_FAMILY: LazyLock<Regex> = LazyLock::new(|| compile_i(r"\bx(86|64)\b"));
+    static ENGLISH_ORDINAL: LazyLock<Regex> =
+        LazyLock::new(|| compile_i(r"\b(\d+)(?:st|nd|rd|th)\b"));
+    static MIXED: LazyLock<Regex> = LazyLock::new(|| compile(r"\b[A-Za-z0-9]+\b"));
 
     let text = sub(text, &INTERNET_PROTOCOL, |m| {
         format!("ай пі версії {}", read_ascii_digit_run(cap(m, 1)))
