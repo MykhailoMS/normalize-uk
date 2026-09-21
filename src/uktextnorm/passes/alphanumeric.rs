@@ -12,7 +12,7 @@ use crate::uktextnorm::readers::{read_identifier_number, spell_identifier_letter
 use crate::uktextnorm::text::{
     is_uk, is_upper_uk, is_word_joiner, join, lower_text, try_parse_u64,
 };
-use crate::uktextnorm::{fuzzy_match, InputTolerance};
+use crate::uktextnorm::{fuzzy_match, lexicon, InputTolerance};
 
 /// How each Latin letter is named when read aloud in Ukrainian.
 #[rustfmt::skip]
@@ -230,47 +230,119 @@ pub(crate) fn normalize_cyrillic_alphanumeric(text: &str) -> String {
     out
 }
 
-/// Distorted Cyrillic *readings* of known brand and English words, mapped from
-/// a folded canonical key to the canonical reading.
+/// Canonical Cyrillic surface forms that ASR distorts, mapped from a folded
+/// canonical key to the exact surface form to restore.
 ///
-/// The lexicon values (`вотсап`, `гугл`, `ютуб`, `спотіфай`) are the readings
-/// this crate emits. ASR delivers them mis-spelled (`ватсап`, `спотифай`) or
-/// with dropped separators, and no exact rule then matches. This index lets the
-/// ASR-tolerant pass fold such a token back to the canonical reading.
+/// The targets are deliberately the *closed, foreign-shaped* sets — the readings
+/// this crate emits for brands and English words (`вотсап`, `ютуб`, `спотіфай`)
+/// and acronym keys (`ПДВ`, `ЗСУ`). These are not ordinary Ukrainian words, so a
+/// bounded fuzzy match against them cannot drag prose onto a reading.
 ///
-/// A canonical key shared by two different readings is dropped from the index:
-/// an ambiguous distortion must stay untouched rather than resolve to an
-/// arbitrary reading.
-static CYRILLIC_READINGS: LazyLock<HashMap<String, &'static str>> = LazyLock::new(|| {
+/// Deliberately **excluded**: unit and counted-noun word forms (`кілометрів`,
+/// `документів`). Those are real inflected words whose neighbours in running
+/// text are also real words, so fuzzy-matching them would corrupt prose.
+/// Repairing a distorted *ordinary* word is a spell-checking problem against an
+/// open dictionary, not a closed-lexicon fallback, and is out of scope here.
+///
+/// A canonical key shared by two different surface forms is dropped: an
+/// ambiguous distortion must stay untouched rather than resolve arbitrarily.
+static ASR_TARGETS: LazyLock<HashMap<String, &'static str>> = LazyLock::new(|| {
     let mut by_key: HashMap<String, Option<&'static str>> = HashMap::new();
-    for &reading in ENGLISH_WORDS.values() {
-        // Only readings that are genuinely Cyrillic words; skip anything that is
-        // still Latin or too short to fuzzy-match safely.
-        if reading.chars().count() < 4 || !reading.chars().any(is_uk) {
-            continue;
+    let mut add = |surface: &'static str| {
+        // Cyrillic only, and at least an initialism's worth of letters. Short
+        // targets (acronyms) are still safe because `canonicalize_asr` accepts
+        // only an exact canonical fold for them, never a fuzzy guess.
+        if surface.chars().count() < 3 || !surface.chars().any(is_uk) {
+            return;
         }
-        let key = fuzzy_match::canonical_key(reading);
+        let key = fuzzy_match::canonical_key(surface);
         by_key
             .entry(key)
             .and_modify(|slot| {
-                if *slot != Some(reading) {
-                    *slot = None; // collision: two readings share a key
+                if *slot != Some(surface) {
+                    *slot = None; // collision: two surface forms share a key
                 }
             })
-            .or_insert(Some(reading));
+            .or_insert(Some(surface));
+    };
+    // Brand and English readings (the values this crate emits).
+    for &reading in ENGLISH_WORDS.values() {
+        add(reading);
     }
-    by_key.into_iter().filter_map(|(k, v)| v.map(|reading| (k, reading))).collect()
+    // Acronym keys, which are Cyrillic initialisms (ПДВ, ЗСУ, …). Restoring the
+    // exact key lets the downstream acronym pass expand it.
+    for &(acronym, _) in lexicon::ACRONYMS.iter() {
+        add(acronym);
+    }
+    by_key.into_iter().filter_map(|(k, v)| v.map(|surface| (k, surface))).collect()
 });
 
-/// Folds distorted Cyrillic readings of known words back to canonical form.
+/// Folds distorted Cyrillic tokens back to a canonical surface form, so the
+/// downstream passes see clean input.
 ///
-/// Runs only under [`InputTolerance::Asr`]. A Cyrillic token that already is a
-/// canonical reading is left untouched (the fast path); otherwise it is
-/// resolved against the closed [`CYRILLIC_READINGS`] index via the canonical
-/// key and a bounded fuzzy match. Free Ukrainian prose is safe: the target set
-/// is only the foreign-origin readings (`вотсап`, `ютуб`, …), the edit budget
-/// is 1–2, and ties are left unresolved.
-pub(crate) fn normalize_cyrillic_readings(text: &str, tolerance: InputTolerance) -> String {
+/// Runs only under [`InputTolerance::Asr`], as a preprocessing step before the
+/// main pipeline. A token that already is a canonical target is left untouched
+/// (the fast path); otherwise it is resolved against the closed [`ASR_TARGETS`]
+/// Acronyms keyed by the folded spelling of their letter names, so a phonetic
+/// ASR rendering resolves back to the acronym.
+///
+/// A recognizer often writes an initialism as it sounds: `ПДВ` -> `педеве`
+/// (пе-де-ве), `СБУ` -> `есбеу`. The letters themselves are gone, so neither the
+/// exact rule nor a canonical/edit-distance fold over `ПДВ` can catch it. This
+/// index maps `canonical_key("пе"+"де"+"ве") = "педеве"` back to `ПДВ`.
+///
+/// Collisions (two acronyms whose spellings fold together) are dropped.
+static ASR_SPELLED_ACRONYMS: LazyLock<HashMap<String, &'static str>> = LazyLock::new(|| {
+    use crate::uktextnorm::morphology::PRONUNCIATION;
+    let mut by_key: HashMap<String, Option<&'static str>> = HashMap::new();
+    for &(acronym, _) in lexicon::ACRONYMS.iter() {
+        // Spell each letter by its Ukrainian name and glue the names together.
+        let mut spelled = String::new();
+        let mut ok = true;
+        for cp in acronym.chars() {
+            match PRONUNCIATION.get(cp.to_string().as_str()) {
+                Some(name) => spelled.push_str(name),
+                None => {
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        // Only worth indexing when spelling it out actually lengthens it into a
+        // word-like token (a two-letter acronym spelled out stays ambiguous).
+        if !ok || spelled.chars().count() < 4 {
+            continue;
+        }
+        let key = fuzzy_match::canonical_key(&spelled);
+        by_key
+            .entry(key)
+            .and_modify(|slot| {
+                if *slot != Some(acronym) {
+                    *slot = None;
+                }
+            })
+            .or_insert(Some(acronym));
+    }
+    by_key.into_iter().filter_map(|(k, v)| v.map(|acronym| (k, acronym))).collect()
+});
+
+/// Folds distorted Cyrillic tokens back to a canonical surface form, so the
+/// downstream passes see clean input.
+///
+/// Runs only under [`InputTolerance::Asr`], as a preprocessing step before the
+/// main pipeline. Three kinds of distortion are repaired against closed sets:
+///
+/// - **spelling / separators / confusables** — `пдв` -> `ПДВ`, `ватсап` ->
+///   `вотсап` (exact canonical fold; safe at any length);
+/// - **edit-distance** — `спотифай` -> `спотіфай` (only for targets ≥ 4 chars,
+///   where an accidental collision with a short real word is unlikely);
+/// - **phonetic acronym spelling** — `педеве` -> `ПДВ`, via
+///   [`ASR_SPELLED_ACRONYMS`].
+///
+/// A token that already is a canonical target verbatim is left untouched. Free
+/// Ukrainian prose is safe: every target set is closed and foreign-shaped, the
+/// edit budget is 1–2, and ties are left unresolved.
+pub(crate) fn canonicalize_asr(text: &str, tolerance: InputTolerance) -> String {
     if tolerance != InputTolerance::Asr {
         return text.to_owned();
     }
@@ -278,18 +350,38 @@ pub(crate) fn normalize_cyrillic_readings(text: &str, tolerance: InputTolerance)
         LazyLock::new(|| compile(r"[А-Яа-яЄєІіЇїҐґ][А-Яа-яЄєІіЇїҐґ'’`-]*"));
     sub(text, &WORD, |m| {
         let token = whole(m);
-        let low = lower_text(token);
-        // Already a canonical reading (or its exact lowercase): leave it.
-        if CYRILLIC_READINGS.values().any(|&r| r == low) {
+        // A verbatim canonical target (same case) needs no repair.
+        if ASR_TARGETS.values().any(|&s| s == token) {
             return token.to_owned();
         }
-        let entries = CYRILLIC_READINGS.iter().map(|(k, &v)| (k.as_str(), v));
-        // `resolve` folds the token to its canonical key and matches against the
-        // index keys, which are themselves canonical — so exact/canonical/fuzzy
-        // all resolve here.
+        let low = lower_text(token);
+        let needle = fuzzy_match::canonical_key(&low);
+
+        // Phonetic acronym spelling: `педеве` -> `ПДВ`. Exact key first, then a
+        // bounded fuzzy fold for a mis-heard letter name.
+        if let Some(&acronym) = ASR_SPELLED_ACRONYMS.get(&needle) {
+            return acronym.to_owned();
+        }
+        let spelled_keys = ASR_SPELLED_ACRONYMS.keys().map(String::as_str);
+        if let Some((hit, _)) = fuzzy_match::best_fuzzy_match(&needle, spelled_keys) {
+            if let Some(&acronym) = ASR_SPELLED_ACRONYMS.get(hit) {
+                return acronym.to_owned();
+            }
+        }
+
+        // Spelling / separator / confusable and edit-distance repairs against
+        // the brand-reading and acronym-key targets.
+        let entries = ASR_TARGETS.iter().map(|(k, &v)| (k.as_str(), v));
         match fuzzy_match::resolve(&low, entries) {
-            Some((reading, fuzzy_match::MatchKind::Canonical | fuzzy_match::MatchKind::Fuzzy)) => {
-                reading.to_owned()
+            // Exact canonical fold (separators/confusables only) — safe at any
+            // length, so a short acronym like `пдв` -> `ПДВ` is restored.
+            Some((surface, fuzzy_match::MatchKind::Exact | fuzzy_match::MatchKind::Canonical)) => {
+                surface.to_owned()
+            }
+            // A fuzzy (edit-distance) repair is only trusted for longer targets,
+            // where an accidental collision with a real short word is unlikely.
+            Some((surface, fuzzy_match::MatchKind::Fuzzy)) if surface.chars().count() >= 4 => {
+                surface.to_owned()
             }
             _ => token.to_owned(),
         }

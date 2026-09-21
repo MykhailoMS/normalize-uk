@@ -118,9 +118,19 @@ let options = NormalizeOptions { input_tolerance: InputTolerance::Asr, ..Default
 
 // "ватсап" is a one-edit distortion of the canonical reading "вотсап".
 assert_eq!(normalize_with("ватсап", &options), "вотсап");
-// Everyday Ukrainian prose is never dragged onto a foreign reading.
+// A lowercased or phonetically-spelled acronym is restored, then expanded.
+assert!(normalize_with("сума пдв", &options).contains("додану вартість"));
+assert!(normalize_with("сума педеве", &options).contains("додану вартість"));
+// Everyday Ukrainian prose is never dragged onto a reading or acronym.
 assert_eq!(normalize_with("сьогодні я пив каву", &options), "сьогодні я пив каву");
 ```
+
+The closed target sets are foreign-shaped by design — brand/English readings
+and acronym keys (plus their phonetic letter-name spellings, so `педеве` folds
+back to `ПДВ`). Inflected ordinary words (unit and counted-noun forms such as
+`кілометрів`) are **deliberately excluded**: repairing a distorted everyday word
+is a spell-checking problem against an open dictionary, not a closed-lexicon
+fallback, and folding them here would corrupt prose.
 
 ## Numbers
 

@@ -93,3 +93,45 @@ fn asr_mode_leaves_ordinary_ukrainian_prose_alone() {
     let sentence = "сьогодні вранці я пив каву";
     assert_eq!(normalize_with(sentence, &asr_options()), sentence);
 }
+
+// --- Extended targets: acronyms ---------------------------------------------
+
+#[test]
+fn asr_mode_restores_a_lowercased_acronym() {
+    // ASR emits the ПДВ initialism glued and lowercased; the exact acronym rule
+    // (which requires uppercase) misses it, so canonicalize_asr restores "ПДВ"
+    // and the downstream acronym pass then expands it.
+    let out = normalize_with("сума пдв велика", &asr_options());
+    assert!(out.contains("додану вартість"), "expected the ПДВ expansion, got: {out}");
+}
+
+#[test]
+fn strict_mode_leaves_a_lowercased_acronym_untouched() {
+    let out = normalize_with("сума пдв велика", &NormalizeOptions::default());
+    assert!(out.contains("пдв"));
+    assert!(!out.contains("додану вартість"));
+}
+
+#[test]
+fn asr_mode_does_not_invent_an_acronym_from_prose() {
+    // A common word must not be pulled onto an acronym key.
+    let sentence = "вони пили каву разом";
+    assert_eq!(normalize_with(sentence, &asr_options()), sentence);
+}
+
+#[test]
+fn asr_mode_restores_a_phonetically_spelled_acronym() {
+    // ASR writes the ПДВ initialism as it sounds: пе-де-ве -> "педеве".
+    let out = normalize_with("нарахували педеве", &asr_options());
+    assert!(
+        out.contains("додану вартість"),
+        "expected the ПДВ expansion from a phonetic spelling, got: {out}"
+    );
+}
+
+#[test]
+fn strict_mode_leaves_a_phonetic_acronym_untouched() {
+    let out = normalize_with("нарахували педеве", &NormalizeOptions::default());
+    assert!(out.contains("педеве"));
+    assert!(!out.contains("додану вартість"));
+}

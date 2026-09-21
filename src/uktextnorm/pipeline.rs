@@ -8,19 +8,18 @@ use std::sync::LazyLock;
 use super::lexicon;
 use super::numbers::number_to_words;
 use super::passes::{
-    expand_abbreviations, normalize_abbreviations, normalize_addresses,
+    canonicalize_asr, expand_abbreviations, normalize_abbreviations, normalize_addresses,
     normalize_biblical_references, normalize_case_context, normalize_compounds,
     normalize_coordinates, normalize_counted_noun_context, normalize_counted_nouns,
-    normalize_currency, normalize_cyrillic_alphanumeric, normalize_cyrillic_readings,
-    normalize_dates, normalize_decimals, normalize_discourse_dates, normalize_english,
-    normalize_finance, normalize_fractions, normalize_homoglyphs, normalize_identifiers,
-    normalize_ip_addresses, normalize_known_acronyms, normalize_math, normalize_measurements,
-    normalize_medical, normalize_multipliers, normalize_negatives, normalize_number_groups,
-    normalize_ordinal_triggers, normalize_ordinals, normalize_overprecise_currency_decimals,
-    normalize_page_ranges, normalize_percent, normalize_quarters, normalize_ranges,
-    normalize_regional_currency_aliases, normalize_scientific, normalize_section_ranges,
-    normalize_sections, normalize_symbol_currency, normalize_symbols,
-    normalize_technical_alphanumeric, normalize_text_with_numbers,
+    normalize_currency, normalize_cyrillic_alphanumeric, normalize_dates, normalize_decimals,
+    normalize_discourse_dates, normalize_english, normalize_finance, normalize_fractions,
+    normalize_homoglyphs, normalize_identifiers, normalize_ip_addresses, normalize_known_acronyms,
+    normalize_math, normalize_measurements, normalize_medical, normalize_multipliers,
+    normalize_negatives, normalize_number_groups, normalize_ordinal_triggers, normalize_ordinals,
+    normalize_overprecise_currency_decimals, normalize_page_ranges, normalize_percent,
+    normalize_quarters, normalize_ranges, normalize_regional_currency_aliases,
+    normalize_scientific, normalize_section_ranges, normalize_sections, normalize_symbol_currency,
+    normalize_symbols, normalize_technical_alphanumeric, normalize_text_with_numbers,
     normalize_text_with_phone_numbers, normalize_time, normalize_typography, normalize_unicode,
     normalize_versions, normalize_web, transliterate_to_cyrillic,
 };
@@ -715,6 +714,13 @@ pub fn normalize_with(text: &str, options: &NormalizeOptions) -> String {
     text = normalize_unicode(&text, options.quote_style);
     text = normalize_typography(&text);
 
+    // ASR tolerance: fold distorted Cyrillic tokens back to a canonical surface
+    // form before any rule pass runs, so the acronym/brand passes downstream see
+    // clean input (`пдв` -> `ПДВ`, `ватсап` -> `вотсап`). No-op under Strict.
+    if options.input_tolerance == InputTolerance::Asr {
+        text = canonicalize_asr(&text, options.input_tolerance);
+    }
+
     // Isolated mathematical variables must not pass through Latin/Cyrillic
     // homoglyph repair (ρh would otherwise become the unreadable ρг).
     for (from, to) in [
@@ -896,9 +902,6 @@ pub fn normalize_with(text: &str, options: &NormalizeOptions) -> String {
     }
     if options.normalize_english_words && has_ascii_alpha(&text) {
         text = normalize_english(&text, &options.vocabulary, options.input_tolerance);
-    }
-    if options.input_tolerance == InputTolerance::Asr {
-        text = normalize_cyrillic_readings(&text, options.input_tolerance);
     }
     if options.transliterate_latin {
         text = transliterate_to_cyrillic(&text);
