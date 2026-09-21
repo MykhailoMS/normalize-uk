@@ -58,3 +58,38 @@ fn strict_mode_reports_no_approximate_matches() {
     let spans = flag_uncertain_with("spotifay", &NormalizeOptions::default());
     assert!(spans.iter().all(|s| s.category != UncertaintyCategory::ApproximateMatch));
 }
+
+// --- Second pass: distorted Cyrillic readings -------------------------------
+
+#[test]
+fn asr_mode_fixes_a_distorted_cyrillic_reading() {
+    // "ватсап" is a one-edit distortion of the canonical reading "вотсап"
+    // (whatsapp). The input is Cyrillic, so `normalize_english` never sees it —
+    // only the Cyrillic pass can fix it.
+    let out = normalize_with("ватсап", &asr_options());
+    assert_eq!(out, "вотсап");
+}
+
+#[test]
+fn asr_mode_fixes_a_cyrillic_vowel_confusion() {
+    // "спотифай" -> "спотіфай" (и/і confusion), one edit.
+    assert_eq!(normalize_with("спотифай", &asr_options()), "спотіфай");
+}
+
+#[test]
+fn asr_mode_leaves_a_canonical_cyrillic_reading_untouched() {
+    assert_eq!(normalize_with("вотсап", &asr_options()), "вотсап");
+}
+
+#[test]
+fn strict_mode_does_not_touch_a_distorted_cyrillic_reading() {
+    // Without ASR tolerance the distorted reading passes through unchanged.
+    assert_eq!(normalize_with("ватсап", &NormalizeOptions::default()), "ватсап");
+}
+
+#[test]
+fn asr_mode_leaves_ordinary_ukrainian_prose_alone() {
+    // Everyday Ukrainian words must not be dragged onto a foreign reading.
+    let sentence = "сьогодні вранці я пив каву";
+    assert_eq!(normalize_with(sentence, &asr_options()), sentence);
+}

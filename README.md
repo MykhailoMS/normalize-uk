@@ -108,6 +108,20 @@ The fallback never runs on the hot path for clean text, and the search space is
 always a closed lexicon (hundreds of entries), never free text, so the
 behaviour is deterministic and testable by the golden corpora.
 
+The same fallback also runs over Cyrillic input, where ASR distorts the
+*reading itself* rather than a Latin spelling:
+
+```rust
+use normalize_uk::uktextnorm::{normalize_with, InputTolerance, NormalizeOptions};
+
+let options = NormalizeOptions { input_tolerance: InputTolerance::Asr, ..Default::default() };
+
+// "ватсап" is a one-edit distortion of the canonical reading "вотсап".
+assert_eq!(normalize_with("ватсап", &options), "вотсап");
+// Everyday Ukrainian prose is never dragged onto a foreign reading.
+assert_eq!(normalize_with("сьогодні я пив каву", &options), "сьогодні я пив каву");
+```
+
 ## Numbers
 
 ```rust

@@ -229,3 +229,69 @@ pub(crate) fn normalize_cyrillic_alphanumeric(text: &str) -> String {
     out.push_str(&text[last..]);
     out
 }
+
+/// Distorted Cyrillic *readings* of known brand and English words, mapped from
+/// a folded canonical key to the canonical reading.
+///
+/// The lexicon values (`вотсап`, `гугл`, `ютуб`, `спотіфай`) are the readings
+/// this crate emits. ASR delivers them mis-spelled (`ватсап`, `спотифай`) or
+/// with dropped separators, and no exact rule then matches. This index lets the
+/// ASR-tolerant pass fold such a token back to the canonical reading.
+///
+/// A canonical key shared by two different readings is dropped from the index:
+/// an ambiguous distortion must stay untouched rather than resolve to an
+/// arbitrary reading.
+static CYRILLIC_READINGS: LazyLock<HashMap<String, &'static str>> = LazyLock::new(|| {
+    let mut by_key: HashMap<String, Option<&'static str>> = HashMap::new();
+    for &reading in ENGLISH_WORDS.values() {
+        // Only readings that are genuinely Cyrillic words; skip anything that is
+        // still Latin or too short to fuzzy-match safely.
+        if reading.chars().count() < 4 || !reading.chars().any(is_uk) {
+            continue;
+        }
+        let key = fuzzy_match::canonical_key(reading);
+        by_key
+            .entry(key)
+            .and_modify(|slot| {
+                if *slot != Some(reading) {
+                    *slot = None; // collision: two readings share a key
+                }
+            })
+            .or_insert(Some(reading));
+    }
+    by_key.into_iter().filter_map(|(k, v)| v.map(|reading| (k, reading))).collect()
+});
+
+/// Folds distorted Cyrillic readings of known words back to canonical form.
+///
+/// Runs only under [`InputTolerance::Asr`]. A Cyrillic token that already is a
+/// canonical reading is left untouched (the fast path); otherwise it is
+/// resolved against the closed [`CYRILLIC_READINGS`] index via the canonical
+/// key and a bounded fuzzy match. Free Ukrainian prose is safe: the target set
+/// is only the foreign-origin readings (`вотсап`, `ютуб`, …), the edit budget
+/// is 1–2, and ties are left unresolved.
+pub(crate) fn normalize_cyrillic_readings(text: &str, tolerance: InputTolerance) -> String {
+    if tolerance != InputTolerance::Asr {
+        return text.to_owned();
+    }
+    static WORD: LazyLock<Regex> =
+        LazyLock::new(|| compile(r"[А-Яа-яЄєІіЇїҐґ][А-Яа-яЄєІіЇїҐґ'’`-]*"));
+    sub(text, &WORD, |m| {
+        let token = whole(m);
+        let low = lower_text(token);
+        // Already a canonical reading (or its exact lowercase): leave it.
+        if CYRILLIC_READINGS.values().any(|&r| r == low) {
+            return token.to_owned();
+        }
+        let entries = CYRILLIC_READINGS.iter().map(|(k, &v)| (k.as_str(), v));
+        // `resolve` folds the token to its canonical key and matches against the
+        // index keys, which are themselves canonical — so exact/canonical/fuzzy
+        // all resolve here.
+        match fuzzy_match::resolve(&low, entries) {
+            Some((reading, fuzzy_match::MatchKind::Canonical | fuzzy_match::MatchKind::Fuzzy)) => {
+                reading.to_owned()
+            }
+            _ => token.to_owned(),
+        }
+    })
+}

@@ -11,15 +11,16 @@ use super::passes::{
     expand_abbreviations, normalize_abbreviations, normalize_addresses,
     normalize_biblical_references, normalize_case_context, normalize_compounds,
     normalize_coordinates, normalize_counted_noun_context, normalize_counted_nouns,
-    normalize_currency, normalize_cyrillic_alphanumeric, normalize_dates, normalize_decimals,
-    normalize_discourse_dates, normalize_english, normalize_finance, normalize_fractions,
-    normalize_homoglyphs, normalize_identifiers, normalize_ip_addresses, normalize_known_acronyms,
-    normalize_math, normalize_measurements, normalize_medical, normalize_multipliers,
-    normalize_negatives, normalize_number_groups, normalize_ordinal_triggers, normalize_ordinals,
-    normalize_overprecise_currency_decimals, normalize_page_ranges, normalize_percent,
-    normalize_quarters, normalize_ranges, normalize_regional_currency_aliases,
-    normalize_scientific, normalize_section_ranges, normalize_sections, normalize_symbol_currency,
-    normalize_symbols, normalize_technical_alphanumeric, normalize_text_with_numbers,
+    normalize_currency, normalize_cyrillic_alphanumeric, normalize_cyrillic_readings,
+    normalize_dates, normalize_decimals, normalize_discourse_dates, normalize_english,
+    normalize_finance, normalize_fractions, normalize_homoglyphs, normalize_identifiers,
+    normalize_ip_addresses, normalize_known_acronyms, normalize_math, normalize_measurements,
+    normalize_medical, normalize_multipliers, normalize_negatives, normalize_number_groups,
+    normalize_ordinal_triggers, normalize_ordinals, normalize_overprecise_currency_decimals,
+    normalize_page_ranges, normalize_percent, normalize_quarters, normalize_ranges,
+    normalize_regional_currency_aliases, normalize_scientific, normalize_section_ranges,
+    normalize_sections, normalize_symbol_currency, normalize_symbols,
+    normalize_technical_alphanumeric, normalize_text_with_numbers,
     normalize_text_with_phone_numbers, normalize_time, normalize_typography, normalize_unicode,
     normalize_versions, normalize_web, transliterate_to_cyrillic,
 };
@@ -30,7 +31,8 @@ use super::text::{
 };
 use super::validation::{is_valid_date, is_valid_iso_week, valid_hash_length, valid_isbn};
 use super::{
-    CurrencySymbolPolicy, NormalizeOptions, NormalizePreset, NumericDateOrder, SymbolStyle,
+    CurrencySymbolPolicy, InputTolerance, NormalizeOptions, NormalizePreset, NumericDateOrder,
+    SymbolStyle,
 };
 
 /// True when the text mentions any currency symbol, word or code.
@@ -894,6 +896,9 @@ pub fn normalize_with(text: &str, options: &NormalizeOptions) -> String {
     }
     if options.normalize_english_words && has_ascii_alpha(&text) {
         text = normalize_english(&text, &options.vocabulary, options.input_tolerance);
+    }
+    if options.input_tolerance == InputTolerance::Asr {
+        text = normalize_cyrillic_readings(&text, options.input_tolerance);
     }
     if options.transliterate_latin {
         text = transliterate_to_cyrillic(&text);

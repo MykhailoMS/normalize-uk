@@ -14,7 +14,8 @@ mod units;
 pub use abbreviations::{expand_abbreviations, normalize_abbreviations, transliterate_to_cyrillic};
 
 pub(crate) use alphanumeric::{
-    normalize_cyrillic_alphanumeric, normalize_english, normalize_technical_alphanumeric,
+    normalize_cyrillic_alphanumeric, normalize_cyrillic_readings, normalize_english,
+    normalize_technical_alphanumeric,
 };
 pub(crate) use context::{
     normalize_case_context, normalize_compounds, normalize_counted_noun_context,
