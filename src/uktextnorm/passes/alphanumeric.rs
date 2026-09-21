@@ -12,6 +12,7 @@ use crate::uktextnorm::readers::{read_identifier_number, spell_identifier_letter
 use crate::uktextnorm::text::{
     is_uk, is_upper_uk, is_word_joiner, join, lower_text, try_parse_u64,
 };
+use crate::uktextnorm::{fuzzy_match, InputTolerance};
 
 /// How each Latin letter is named when read aloud in Ukrainian.
 #[rustfmt::skip]
@@ -48,17 +49,34 @@ fn read_ascii_digit_run(run: &str) -> String {
 
 /// Replaces known English words with their Ukrainian reading and spells out
 /// unknown all-caps Latin acronyms.
-pub(crate) fn normalize_english(text: &str, vocabulary: &HashMap<String, String>) -> String {
+///
+/// Under [`InputTolerance::Asr`], a Latin word that misses the lexicon exactly
+/// is retried through [`fuzzy_match::resolve`], so a recognizer's typo
+/// (`spotifay`) still reaches its reading. Strict tolerance keeps the exact
+/// behaviour.
+pub(crate) fn normalize_english(
+    text: &str,
+    vocabulary: &HashMap<String, String>,
+    tolerance: InputTolerance,
+) -> String {
     static WORD: LazyLock<Regex> = LazyLock::new(|| compile(r"\b[A-Za-z][A-Za-z'’-]*\b"));
     static ACRONYM: LazyLock<Regex> = LazyLock::new(|| compile(r"\b[A-Z]+\b"));
     let text = sub(text, &WORD, |m| {
         let low = lower_text(whole(m));
-        vocabulary
-            .get(&low)
-            .map(String::as_str)
-            .or_else(|| ENGLISH_WORDS.get(low.as_str()).copied())
-            .unwrap_or_else(|| whole(m))
-            .to_owned()
+        if let Some(reading) = vocabulary.get(&low) {
+            return reading.clone();
+        }
+        if let Some(reading) = ENGLISH_WORDS.get(low.as_str()) {
+            return (*reading).to_owned();
+        }
+        if tolerance == InputTolerance::Asr {
+            // Miss: retry against the closed lexicon, tolerating ASR noise.
+            let entries = ENGLISH_WORDS.iter().map(|(&k, &v)| (k, v));
+            if let Some((reading, _kind)) = fuzzy_match::resolve(&low, entries) {
+                return reading.to_owned();
+            }
+        }
+        whole(m).to_owned()
     });
     sub(&text, &ACRONYM, |m| {
         let low = lower_text(whole(m));

@@ -77,6 +77,37 @@ assert!(spans.iter().any(|s| s.text == "30.02.2024"));
 `UncertainSpan::start` and `stop` are byte offsets, so
 `&source[span.start..span.stop] == span.text`.
 
+### Tolerating ASR-distorted input
+
+Speech recognition rarely hands the normalizer a clean token: the same word
+arrives with a missing apostrophe (`дев'ятнадцятого` → `девятнадцятого`), glued
+or split (`ю ес бі` → `юесбі`), or in a surzhyk / phonetic variant. Under the
+default `InputTolerance::Strict` such a token misses the exact lexicon lookups
+and passes through unchanged. `InputTolerance::Asr` adds a fallback that runs
+*only after an exact lookup misses*, resolving the token against the closed
+lexicon in two cheap, deterministic stages — a canonical key that folds
+separators and confusable spellings, then a bounded edit-distance match to the
+single closest entry (ties are left unresolved rather than guessed).
+
+```rust
+use normalize_uk::uktextnorm::{
+    flag_uncertain_with, normalize_with, InputTolerance, NormalizeOptions, UncertaintyCategory,
+};
+
+let options = NormalizeOptions { input_tolerance: InputTolerance::Asr, ..Default::default() };
+
+// A recognizer typo still reaches its reading.
+assert_eq!(normalize_with("spotifay", &options), "спотіфай");
+
+// Every approximate reading is reported, never silently guessed.
+let spans = flag_uncertain_with("spotifay", &options);
+assert!(spans.iter().any(|s| s.category == UncertaintyCategory::ApproximateMatch));
+```
+
+The fallback never runs on the hot path for clean text, and the search space is
+always a closed lexicon (hundreds of entries), never free text, so the
+behaviour is deterministic and testable by the golden corpora.
+
 ## Numbers
 
 ```rust

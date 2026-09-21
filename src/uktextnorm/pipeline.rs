@@ -893,7 +893,7 @@ pub fn normalize_with(text: &str, options: &NormalizeOptions) -> String {
         text = normalize_technical_alphanumeric(&text);
     }
     if options.normalize_english_words && has_ascii_alpha(&text) {
-        text = normalize_english(&text, &options.vocabulary);
+        text = normalize_english(&text, &options.vocabulary, options.input_tolerance);
     }
     if options.transliterate_latin {
         text = transliterate_to_cyrillic(&text);

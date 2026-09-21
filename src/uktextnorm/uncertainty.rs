@@ -4,6 +4,7 @@ use fancy_regex::{Captures, Regex};
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
+use super::fuzzy_match;
 use super::lexicon;
 use super::patterns::UNIT_ALT;
 use super::re::{cap, cap_start, compile, compile_i, each, matched, whole};
@@ -16,7 +17,7 @@ use super::validation::{
     is_valid_date, is_valid_iso_week, valid_hash_length, valid_iban, valid_isbn, valid_issn,
     valid_luhn, valid_roman, valid_uuid_variant, valid_vin_checksum,
 };
-use super::{ColonStyle, CurrencySymbolPolicy, NormalizeOptions, NumericDateOrder};
+use super::{ColonStyle, CurrencySymbolPolicy, InputTolerance, NormalizeOptions, NumericDateOrder};
 
 /// What kind of ambiguity a span reports.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -40,6 +41,9 @@ pub enum UncertaintyCategory {
     Network,
     Scientific,
     Coordinate,
+    /// The token did not match a lexicon key exactly and was resolved to the
+    /// closest known reading under [`InputTolerance::Asr`](super::InputTolerance).
+    ApproximateMatch,
 }
 
 /// How much the ambiguity matters.
@@ -535,6 +539,34 @@ fn flag_uncertain_impl(text: &str, options: Option<&NormalizeOptions>) -> Vec<Un
             Sev::Warning,
         );
     });
+
+    // Under ASR tolerance, flag every Latin word that will be resolved
+    // approximately: it misses the lexicon exactly but reaches a reading through
+    // the canonical-key or fuzzy fallback. This is what keeps an approximate
+    // reading visible instead of silently guessed.
+    if options.is_some_and(|o| o.input_tolerance == InputTolerance::Asr) {
+        static LATIN_WORD: LazyLock<Regex> = LazyLock::new(|| compile(r"\b[A-Za-z][A-Za-z'’-]*\b"));
+        let vocabulary = options.map(|o| &o.vocabulary);
+        each(text, &LATIN_WORD, |m| {
+            let token = whole(m);
+            let low = lower_text(token);
+            let known_exact = ENGLISH_WORDS.contains_key(low.as_str())
+                || vocabulary.is_some_and(|v| v.contains_key(&low));
+            if known_exact {
+                return;
+            }
+            let entries = ENGLISH_WORDS.iter().map(|(&k, &v)| (k, v));
+            if fuzzy_match::resolve(&low, entries).is_some() {
+                c.add(
+                    cap_start(m, 0),
+                    end_of(m),
+                    "approximate match: token resolved to the closest known reading",
+                    Cat::ApproximateMatch,
+                    Sev::Info,
+                );
+            }
+        });
+    }
 
     for word in uncertain_word_spans(text) {
         let token = &text[word.start..word.stop];

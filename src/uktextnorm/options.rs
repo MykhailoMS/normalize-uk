@@ -90,6 +90,25 @@ pub enum QuoteStyle {
     Strip,
 }
 
+/// How forgiving lexicon lookups are toward a noisy, ASR-produced input.
+///
+/// Speech recognition often hands the normalizer a token that is *almost* a
+/// known word — a missing apostrophe, a glued or split spelling, a surzhyk or
+/// phonetic variant. `Strict` (the default) keeps the exact-match behaviour the
+/// crate has always had. `Asr` adds a fallback that only runs *after* an exact
+/// lookup misses: it folds the token to a canonical key and, failing that,
+/// takes the closest lexicon entry within a bounded edit distance. Every such
+/// fallback is reported by [`flag_uncertain_with`](super::flag_uncertain_with)
+/// so the reading is never silently guessed.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum InputTolerance {
+    /// Match lexicon keys exactly (backward-compatible default).
+    #[default]
+    Strict,
+    /// Tolerate ASR distortions via a canonical-key and fuzzy fallback.
+    Asr,
+}
+
 /// A named bundle of options for a common use case.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum NormalizePreset {
@@ -152,6 +171,8 @@ pub struct NormalizeOptions {
     pub numeric_date_order: NumericDateOrder,
     /// What to do with currency symbols shared by several currencies.
     pub currency_symbol_policy: CurrencySymbolPolicy,
+    /// How forgiving lexicon lookups are toward noisy, ASR-produced input.
+    pub input_tolerance: InputTolerance,
     /// Lowercase Latin word to preferred Ukrainian reading. Entries here
     /// override the built-in brand and English-word lexicons.
     pub vocabulary: HashMap<String, String>,
@@ -176,6 +197,7 @@ impl Default for NormalizeOptions {
             colon_style: ColonStyle::default(),
             numeric_date_order: NumericDateOrder::default(),
             currency_symbol_policy: CurrencySymbolPolicy::default(),
+            input_tolerance: InputTolerance::default(),
             vocabulary: HashMap::new(),
         }
     }
