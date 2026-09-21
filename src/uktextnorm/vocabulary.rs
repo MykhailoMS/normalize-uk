@@ -115,3 +115,57 @@ pub fn parse_vocabulary(source: &str) -> Result<HashMap<String, String>, Vocabul
     }
     Ok(words)
 }
+
+/// Reads a one-column `word` TSV of canonical Cyrillic words for the ASR
+/// fallback to repair distorted tokens to (see
+/// [`NormalizeOptions::asr_vocabulary`](super::NormalizeOptions)).
+///
+/// The file must start with a `word` header; blank lines and lines beginning
+/// with `#` are ignored. Each remaining line is one canonical word.
+///
+/// # Errors
+///
+/// Returns an error when the file cannot be read, the header is missing, or a
+/// row is empty or has more than one column.
+pub fn load_asr_vocabulary_tsv(path: impl AsRef<Path>) -> Result<Vec<String>, VocabularyError> {
+    parse_asr_vocabulary(&std::fs::read_to_string(path)?)
+}
+
+/// Parses the contents of an ASR-vocabulary TSV file.
+///
+/// # Errors
+///
+/// As [`load_asr_vocabulary_tsv`], minus the I/O cases.
+pub fn parse_asr_vocabulary(source: &str) -> Result<Vec<String>, VocabularyError> {
+    let mut words = Vec::new();
+    let mut header_seen = false;
+    for (index, raw) in source.lines().enumerate() {
+        let line_number = index + 1;
+        let mut line = raw.strip_suffix('\r').unwrap_or(raw);
+        if line_number == 1 {
+            line = line.strip_prefix('\u{feff}').unwrap_or(line);
+        }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let invalid = |message| VocabularyError::Invalid { line: line_number, message };
+        if !header_seen {
+            if line != "word" {
+                return Err(invalid("expected a `word` header"));
+            }
+            header_seen = true;
+            continue;
+        }
+        if line.contains('\t') {
+            return Err(invalid("expected a single column"));
+        }
+        if line.trim() != line || line.is_empty() {
+            return Err(invalid("word must be nonempty without surrounding whitespace"));
+        }
+        words.push(line.to_owned());
+    }
+    if !header_seen {
+        return Err(VocabularyError::Invalid { line: 0, message: "is missing a `word` header" });
+    }
+    Ok(words)
+}

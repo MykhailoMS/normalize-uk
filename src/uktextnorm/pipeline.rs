@@ -718,7 +718,7 @@ pub fn normalize_with(text: &str, options: &NormalizeOptions) -> String {
     // form before any rule pass runs, so the acronym/brand passes downstream see
     // clean input (`пдв` -> `ПДВ`, `ватсап` -> `вотсап`). No-op under Strict.
     if options.input_tolerance == InputTolerance::Asr {
-        text = canonicalize_asr(&text, options.input_tolerance);
+        text = canonicalize_asr(&text, options.input_tolerance, &options.asr_vocabulary);
     }
 
     // Isolated mathematical variables must not pass through Latin/Cyrillic

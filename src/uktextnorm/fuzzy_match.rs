@@ -39,17 +39,28 @@ fn distance_budget(key_len: usize) -> usize {
     }
 }
 
-/// Folds a token to a canonical key that ignores the spellings ASR varies.
+/// Folds a token to a canonical phonetic key that ignores the spellings ASR
+/// varies for Ukrainian speech.
 ///
-/// The transform is intentionally small and reversible in spirit: it removes
-/// only the separators and doublings that carry no phonemic weight, and maps a
-/// short list of Cyrillic letters that recognizers routinely confuse onto a
-/// single representative. It is *not* a general phonetic hash — every fold here
-/// is one an ASR error actually produces, so unrelated words do not collide.
+/// The fold is built from the distortions a Ukrainian recognizer actually
+/// produces, so tokens that *sound the same* collapse to one key. It is applied
+/// only against closed, foreign-shaped target sets (brand readings, acronym
+/// spellings), where merging near-homophones is safe — it is never a general
+/// speller over open prose.
+///
+/// What it folds, and why each is an ASR reality:
+/// - separators (space / hyphen / apostrophe) — added or dropped at random;
+/// - front-vowel confusions `і`/`ї` → `и`, `є` → `е` — the most common
+///   Ukrainian ASR error class (unstressed vowel reduction);
+/// - iotated back vowels `я`→`а`, `ю`→`у` — the glide is often lost;
+/// - `ґ`→`г` — routinely merged;
+/// - Russian/surzhyk carry-over `ы`→`и`, `э`→`е`, `ё`→`о`, `ъ`→dropped;
+/// - the soft sign `ь` — a secondary articulation ASR rarely writes;
+/// - immediate doublings — collapsed (`нн`, `сс` mis-heard as single).
 ///
 /// ```ignore
 /// assert_eq!(canonical_key("вай-фай"), canonical_key("вай фай"));
-/// assert_eq!(canonical_key("вайфай"),  canonical_key("вай фай"));
+/// assert_eq!(canonical_key("спотифай"), canonical_key("спотіфай"));
 /// assert_eq!(canonical_key("дев'ятнадцятого"), canonical_key("девятнадцятого"));
 /// ```
 #[must_use]
@@ -64,18 +75,30 @@ pub(crate) fn canonical_key(token: &str) -> String {
             continue;
         }
         let cp = lower_cp(cp);
-        // Confusable pairs a recognizer flips on unstressed vowels and the
-        // soft-vs-hard sign. Each maps to one representative so the two
-        // spellings share a key; none of these merges distinct dictionary
-        // words, because the fallback only ever compares against a closed set.
+        // Fold near-homophones onto one representative. Every mapping is an ASR
+        // confusion for Ukrainian; because the fallback only compares against a
+        // closed foreign-shaped set, none of these merges two real targets.
         let folded = match cp {
-            'ы' => 'и', // russian carry-over from surzhyk input
+            // Front vowels: the dominant unstressed-reduction confusion.
+            'і' | 'ї' => 'и',
+            'є' => 'е',
+            // Iotated back vowels: the glide is frequently dropped.
+            'я' => 'а',
+            'ю' => 'у',
+            // Routinely merged consonant and its Russian twin.
+            'ґ' => 'г',
+            // Surzhyk / Russian carry-over from the input side.
+            'ы' => 'и',
             'э' => 'е',
-            'ё' => 'е',
-            'ъ' => 'ь',
+            'ё' => 'о',
+            // The soft sign and hard sign carry no vowel; drop them.
+            'ь' | 'ъ' => '\0',
             other => other,
         };
-        // Collapse an immediate doubling (`ассортимент` typos, `нн` mishears).
+        if folded == '\0' {
+            continue; // dropped letter (soft / hard sign)
+        }
+        // Collapse an immediate doubling (`нн`, `сс` mis-heard as a single).
         if folded == previous {
             continue;
         }
@@ -280,6 +303,34 @@ mod tests {
     fn distinct_words_keep_distinct_keys() {
         assert_ne!(canonical_key("тисяча"), canonical_key("тиждень"));
         assert_ne!(canonical_key("google"), canonical_key("doodle"));
+    }
+
+    #[test]
+    fn phonetic_key_folds_front_vowel_confusions() {
+        // і / ї / и collapse; є / е collapse — the dominant ASR vowel errors.
+        assert_eq!(canonical_key("спотіфай"), canonical_key("спотифай"));
+        assert_eq!(canonical_key("вайбер"), canonical_key("вайбэр"));
+        assert_eq!(canonical_key("їжак"), canonical_key("ижак"));
+    }
+
+    #[test]
+    fn phonetic_key_folds_iotation_and_soft_sign() {
+        // я -> а, ю -> у, soft sign dropped.
+        assert_eq!(canonical_key("пятьсот"), canonical_key("п'ятсот"));
+        assert_eq!(canonical_key("сьогодні"), canonical_key("согодни"));
+    }
+
+    #[test]
+    fn phonetic_key_folds_g_variants_and_doublings() {
+        assert_eq!(canonical_key("ґуґл"), canonical_key("гугл"));
+        assert_eq!(canonical_key("ссавці"), canonical_key("савці"));
+    }
+
+    #[test]
+    fn phonetic_key_still_separates_genuinely_different_words() {
+        // Folding must not turn unrelated words into one key.
+        assert_ne!(canonical_key("телеграм"), canonical_key("телефон"));
+        assert_ne!(canonical_key("гугл"), canonical_key("дудл"));
     }
 
     #[test]

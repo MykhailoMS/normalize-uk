@@ -5,7 +5,8 @@
 //! input, and confirm both the reading and the uncertainty report.
 
 use normalize_uk::uktextnorm::{
-    flag_uncertain_with, normalize_with, InputTolerance, NormalizeOptions, UncertaintyCategory,
+    flag_uncertain_with, normalize_with, parse_asr_vocabulary, InputTolerance, NormalizeOptions,
+    UncertaintyCategory,
 };
 
 fn asr_options() -> NormalizeOptions {
@@ -134,4 +135,52 @@ fn strict_mode_leaves_a_phonetic_acronym_untouched() {
     let out = normalize_with("нарахували педеве", &NormalizeOptions::default());
     assert!(out.contains("педеве"));
     assert!(!out.contains("додану вартість"));
+}
+
+// --- Universal extension point: user vocabulary -----------------------------
+
+fn options_with_vocab(words: &[&str]) -> NormalizeOptions {
+    NormalizeOptions {
+        input_tolerance: InputTolerance::Asr,
+        asr_vocabulary: words.iter().map(|w| (*w).to_owned()).collect(),
+        ..NormalizeOptions::default()
+    }
+}
+
+#[test]
+fn user_vocabulary_repairs_a_distorted_domain_word() {
+    // A caller's own Ukrainian word list catches ordinary words the built-in
+    // closed sets never would. "автентіфікація" -> "автентифікація" (і/и fold).
+    let options = options_with_vocab(&["автентифікація"]);
+    assert_eq!(normalize_with("автентіфікація", &options), "автентифікація");
+}
+
+#[test]
+fn user_vocabulary_repairs_via_bounded_edit_distance() {
+    // "ідентифікатор" mis-heard with a dropped letter, one edit away.
+    let options = options_with_vocab(&["ідентифікатор"]);
+    assert_eq!(normalize_with("ідентифікаор", &options), "ідентифікатор");
+}
+
+#[test]
+fn user_vocabulary_leaves_a_far_word_alone() {
+    let options = options_with_vocab(&["ідентифікатор"]);
+    assert_eq!(normalize_with("будинок", &options), "будинок");
+}
+
+#[test]
+fn empty_user_vocabulary_changes_nothing_beyond_builtins() {
+    // With no user words, an ordinary distorted word is left as-is.
+    assert_eq!(normalize_with("автентіфікація", &asr_options()), "автентіфікація");
+}
+
+#[test]
+fn parse_asr_vocabulary_reads_one_column() {
+    let words = parse_asr_vocabulary("word\nавтентифікація\nідентифікатор\n").unwrap();
+    assert_eq!(words, vec!["автентифікація".to_owned(), "ідентифікатор".to_owned()]);
+}
+
+#[test]
+fn parse_asr_vocabulary_rejects_a_missing_header() {
+    assert!(parse_asr_vocabulary("автентифікація\n").is_err());
 }

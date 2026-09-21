@@ -127,10 +127,30 @@ assert_eq!(normalize_with("сьогодні я пив каву", &options), "с�
 
 The closed target sets are foreign-shaped by design — brand/English readings
 and acronym keys (plus their phonetic letter-name spellings, so `педеве` folds
-back to `ПДВ`). Inflected ordinary words (unit and counted-noun forms such as
-`кілометрів`) are **deliberately excluded**: repairing a distorted everyday word
-is a spell-checking problem against an open dictionary, not a closed-lexicon
-fallback, and folding them here would corrupt prose.
+back to `ПДВ`). The canonical key is *phonetic*: it folds the confusions a
+Ukrainian recognizer actually makes (`і`/`ї`/`и`, `е`/`є`, `я`→`а`, `ю`→`у`,
+`ґ`→`г`, the soft sign, doublings, and Russian/surzhyk carry-over), so
+near-homophones collapse before any edit-distance step.
+
+Inflected ordinary words are not repaired by default, because fuzzy-matching
+open prose against itself would corrupt it. The universal extension point is
+`asr_vocabulary`: hand the normalizer any list of canonical Ukrainian words — a
+domain glossary or a full lexicon — and the *same* phonetic-key and
+bounded-edit rules repair distorted tokens against it.
+
+```rust
+use normalize_uk::uktextnorm::{normalize_with, InputTolerance, NormalizeOptions};
+
+let options = NormalizeOptions {
+    input_tolerance: InputTolerance::Asr,
+    asr_vocabulary: vec!["автентифікація".to_owned(), "ідентифікатор".to_owned()],
+    ..Default::default()
+};
+
+assert_eq!(normalize_with("автентіфікація", &options), "автентифікація");
+```
+
+Load the list from a one-column `word` TSV with `load_asr_vocabulary_tsv`.
 
 ## Numbers
 

@@ -173,6 +173,17 @@ pub struct NormalizeOptions {
     pub currency_symbol_policy: CurrencySymbolPolicy,
     /// How forgiving lexicon lookups are toward noisy, ASR-produced input.
     pub input_tolerance: InputTolerance,
+    /// Extra canonical Cyrillic words the ASR fallback may repair a distorted
+    /// token to, beyond the built-in closed sets.
+    ///
+    /// This is the extension point for tolerating distorted *ordinary* words:
+    /// the built-in targets are only foreign-shaped closed sets (brand readings,
+    /// acronyms), because fuzzy-matching open prose against itself would corrupt
+    /// it. A caller that has a domain word list (medical terms, product names,
+    /// a full Ukrainian lexicon) supplies it here, and — only under
+    /// [`InputTolerance::Asr`] — a distorted token is folded to the closest
+    /// entry by the same phonetic-key and bounded-edit rules. Empty by default.
+    pub asr_vocabulary: Vec<String>,
     /// Lowercase Latin word to preferred Ukrainian reading. Entries here
     /// override the built-in brand and English-word lexicons.
     pub vocabulary: HashMap<String, String>,
@@ -198,6 +209,7 @@ impl Default for NormalizeOptions {
             numeric_date_order: NumericDateOrder::default(),
             currency_symbol_policy: CurrencySymbolPolicy::default(),
             input_tolerance: InputTolerance::default(),
+            asr_vocabulary: Vec::new(),
             vocabulary: HashMap::new(),
         }
     }

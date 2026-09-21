@@ -340,18 +340,49 @@ static ASR_SPELLED_ACRONYMS: LazyLock<HashMap<String, &'static str>> = LazyLock:
 ///   [`ASR_SPELLED_ACRONYMS`].
 ///
 /// A token that already is a canonical target verbatim is left untouched. Free
-/// Ukrainian prose is safe: every target set is closed and foreign-shaped, the
-/// edit budget is 1–2, and ties are left unresolved.
-pub(crate) fn canonicalize_asr(text: &str, tolerance: InputTolerance) -> String {
+/// Ukrainian prose is safe: every built-in target set is closed and
+/// foreign-shaped, the edit budget is 1–2, and ties are left unresolved.
+///
+/// `user_vocabulary` is the universal extension point: any canonical Cyrillic
+/// words the caller supplies (a domain glossary, or a full Ukrainian lexicon)
+/// are repaired by the very same phonetic-key and bounded-edit rules, so the
+/// mechanism scales from the built-in closed sets up to open vocabulary without
+/// a different code path.
+pub(crate) fn canonicalize_asr(
+    text: &str,
+    tolerance: InputTolerance,
+    user_vocabulary: &[String],
+) -> String {
     if tolerance != InputTolerance::Asr {
         return text.to_owned();
     }
+    // Fold the caller's words to phonetic keys once per call, dropping any key
+    // shared by two different words (ambiguous — left unresolved).
+    let user_index: HashMap<String, &str> = {
+        let mut by_key: HashMap<String, Option<&str>> = HashMap::new();
+        for word in user_vocabulary {
+            if word.chars().count() < 3 || !word.chars().any(is_uk) {
+                continue;
+            }
+            let key = fuzzy_match::canonical_key(word);
+            by_key
+                .entry(key)
+                .and_modify(|slot| {
+                    if *slot != Some(word.as_str()) {
+                        *slot = None;
+                    }
+                })
+                .or_insert(Some(word.as_str()));
+        }
+        by_key.into_iter().filter_map(|(k, v)| v.map(|w| (k, w))).collect()
+    };
+
     static WORD: LazyLock<Regex> =
         LazyLock::new(|| compile(r"[А-Яа-яЄєІіЇїҐґ][А-Яа-яЄєІіЇїҐґ'’`-]*"));
     sub(text, &WORD, |m| {
         let token = whole(m);
         // A verbatim canonical target (same case) needs no repair.
-        if ASR_TARGETS.values().any(|&s| s == token) {
+        if ASR_TARGETS.values().any(|&s| s == token) || user_vocabulary.iter().any(|w| w == token) {
             return token.to_owned();
         }
         let low = lower_text(token);
@@ -376,14 +407,30 @@ pub(crate) fn canonicalize_asr(text: &str, tolerance: InputTolerance) -> String 
             // Exact canonical fold (separators/confusables only) — safe at any
             // length, so a short acronym like `пдв` -> `ПДВ` is restored.
             Some((surface, fuzzy_match::MatchKind::Exact | fuzzy_match::MatchKind::Canonical)) => {
-                surface.to_owned()
+                return surface.to_owned();
             }
             // A fuzzy (edit-distance) repair is only trusted for longer targets,
             // where an accidental collision with a real short word is unlikely.
             Some((surface, fuzzy_match::MatchKind::Fuzzy)) if surface.chars().count() >= 4 => {
-                surface.to_owned()
+                return surface.to_owned();
             }
-            _ => token.to_owned(),
+            _ => {}
         }
+
+        // Finally, the caller's own vocabulary (the universal extension point).
+        if !user_index.is_empty() {
+            let entries = user_index.iter().map(|(k, &v)| (k.as_str(), v));
+            match fuzzy_match::resolve(&low, entries) {
+                Some((word, fuzzy_match::MatchKind::Exact | fuzzy_match::MatchKind::Canonical)) => {
+                    return word.to_owned();
+                }
+                Some((word, fuzzy_match::MatchKind::Fuzzy)) if word.chars().count() >= 4 => {
+                    return word.to_owned();
+                }
+                _ => {}
+            }
+        }
+
+        token.to_owned()
     })
 }

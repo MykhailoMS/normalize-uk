@@ -38,4 +38,7 @@ pub use pipeline::{normalize, normalize_preset, normalize_with};
 pub use uncertainty::{
     flag_uncertain, flag_uncertain_with, UncertainSpan, UncertaintyCategory, UncertaintySeverity,
 };
-pub use vocabulary::{load_vocabulary_tsv, parse_vocabulary, VocabularyError};
+pub use vocabulary::{
+    load_asr_vocabulary_tsv, load_vocabulary_tsv, parse_asr_vocabulary, parse_vocabulary,
+    VocabularyError,
+};
