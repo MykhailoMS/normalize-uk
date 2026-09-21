@@ -167,6 +167,23 @@ where
 {
     let needle: Vec<char> = token.chars().collect();
     let budget = distance_budget(needle.len());
+    best_fuzzy_match_within(token, candidates, budget)
+}
+
+/// Like [`best_fuzzy_match`] but with an explicit maximum edit distance, for
+/// callers that want a stricter budget than the length-scaled default (e.g. a
+/// single edit against a lexicon that sits in open prose).
+#[must_use]
+pub(crate) fn best_fuzzy_match_within<'a, I>(
+    token: &str,
+    candidates: I,
+    max: usize,
+) -> Option<(&'a str, usize)>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let needle: Vec<char> = token.chars().collect();
+    let budget = max;
     let mut best: Option<(&str, usize)> = None;
     let mut tied = false;
     for candidate in candidates {

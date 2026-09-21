@@ -388,46 +388,52 @@ pub(crate) fn canonicalize_asr(
         let low = lower_text(token);
         let needle = fuzzy_match::canonical_key(&low);
 
-        // Phonetic acronym spelling: `педеве` -> `ПДВ`. Exact key first, then a
-        // bounded fuzzy fold for a mis-heard letter name.
+        // Built-in sets are matched by the phonetic key ONLY — an exact fold,
+        // never an edit-distance guess. The built-ins (brand readings, acronym
+        // keys and spellings) sit in open Ukrainian prose, so a fuzzy match here
+        // would drag ordinary words onto them (`через` -> a brand, `день` -> an
+        // acronym). The phonetic key already absorbs the real ASR distortions;
+        // edit-distance is reserved for the caller's own vocabulary below.
+
+        // Phonetic acronym spelling: `педеве` -> `ПДВ`, `есбеу` -> `СБУ`.
         if let Some(&acronym) = ASR_SPELLED_ACRONYMS.get(&needle) {
             return acronym.to_owned();
         }
-        let spelled_keys = ASR_SPELLED_ACRONYMS.keys().map(String::as_str);
-        if let Some((hit, _)) = fuzzy_match::best_fuzzy_match(&needle, spelled_keys) {
-            if let Some(&acronym) = ASR_SPELLED_ACRONYMS.get(hit) {
-                return acronym.to_owned();
+
+        // Brand readings and acronym keys, by exact phonetic key.
+        if let Some(&surface) = ASR_TARGETS.get(&needle) {
+            return surface.to_owned();
+        }
+
+        // A single residual edit against the built-in targets, but ONLY for
+        // longer tokens (>= 5 folded chars). This catches vowel confusions the
+        // phonetic key does not fold on purpose — chiefly о/а akannya
+        // (`монабанк` -> `монобанк`, `ватсап` -> `вотсап`) — while the length
+        // floor and 1-edit budget keep short prose words (`день`, `двір`) away
+        // from any target. Ties are rejected inside best_fuzzy_match_within.
+        if needle.chars().count() >= 5 {
+            let keys = ASR_TARGETS.keys().map(String::as_str);
+            if let Some((hit, _)) = fuzzy_match::best_fuzzy_match_within(&needle, keys, 1) {
+                if let Some(&surface) = ASR_TARGETS.get(hit) {
+                    return surface.to_owned();
+                }
             }
         }
 
-        // Spelling / separator / confusable and edit-distance repairs against
-        // the brand-reading and acronym-key targets.
-        let entries = ASR_TARGETS.iter().map(|(k, &v)| (k.as_str(), v));
-        match fuzzy_match::resolve(&low, entries) {
-            // Exact canonical fold (separators/confusables only) — safe at any
-            // length, so a short acronym like `пдв` -> `ПДВ` is restored.
-            Some((surface, fuzzy_match::MatchKind::Exact | fuzzy_match::MatchKind::Canonical)) => {
-                return surface.to_owned();
-            }
-            // A fuzzy (edit-distance) repair is only trusted for longer targets,
-            // where an accidental collision with a real short word is unlikely.
-            Some((surface, fuzzy_match::MatchKind::Fuzzy)) if surface.chars().count() >= 4 => {
-                return surface.to_owned();
-            }
-            _ => {}
-        }
-
-        // Finally, the caller's own vocabulary (the universal extension point).
+        // The caller's own vocabulary is the universal extension point. Here an
+        // edit-distance fold is allowed for longer words, because the caller
+        // curated the list and opted into repairing ordinary words against it.
         if !user_index.is_empty() {
-            let entries = user_index.iter().map(|(k, &v)| (k.as_str(), v));
-            match fuzzy_match::resolve(&low, entries) {
-                Some((word, fuzzy_match::MatchKind::Exact | fuzzy_match::MatchKind::Canonical)) => {
-                    return word.to_owned();
+            if let Some(&word) = user_index.get(&needle) {
+                return word.to_owned(); // exact phonetic-key hit
+            }
+            let keys = user_index.keys().map(String::as_str);
+            if let Some((hit, _)) = fuzzy_match::best_fuzzy_match(&needle, keys) {
+                if let Some(&word) = user_index.get(hit) {
+                    if word.chars().count() >= 4 {
+                        return word.to_owned();
+                    }
                 }
-                Some((word, fuzzy_match::MatchKind::Fuzzy)) if word.chars().count() >= 4 => {
-                    return word.to_owned();
-                }
-                _ => {}
             }
         }
 
