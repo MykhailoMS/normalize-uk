@@ -122,7 +122,46 @@ fn a_distorted_ordinary_word_stays_untouched_without_a_vocabulary() {
     assert_unchanged("потрібна автентіфікація", &asr());
 }
 
-// --- One longer, mixed dictation ---------------------------------------------
+// --- Multi-word join / split ------------------------------------------------
+
+#[test]
+fn a_split_multiword_target_is_rejoined() {
+    // A recognizer split "вай-фай" into two tokens; the window pass rejoins it.
+    let options = asr_with(&["вай-фай"]);
+    assert_contains("увімкни вай фай будь ласка", "вай-фай", &options);
+}
+
+#[test]
+fn a_glued_multiword_target_is_split_back() {
+    // The glued form folds to the same phonetic key and is restored.
+    let options = asr_with(&["вай-фай"]);
+    assert_contains("увімкни вайфай будь ласка", "вай-фай", &options);
+}
+
+#[test]
+fn a_distorted_split_multiword_target_is_rejoined() {
+    // Split AND vowel-distorted ("вай" + "фай" with і/и noise) still rejoins.
+    let options = asr_with(&["дата-центр"]);
+    assert_contains("переніс усе в дата центр", "дата-центр", &options);
+    assert_contains("переніс усе в датацентр", "дата-центр", &options);
+}
+
+#[test]
+fn multiword_join_leaves_ordinary_two_word_prose_alone() {
+    let options = asr_with(&["вай-фай", "дата-центр"]);
+    let sentence = "він пішов у магазин по хліб";
+    assert_unchanged(sentence, &options);
+}
+
+// --- Akannya (о/а) now resolves on the exact phonetic key --------------------
+
+#[test]
+fn akannya_is_repaired_without_touching_prose() {
+    assert_contains("переказ через монабанк", "монобанк", &asr());
+    assert_contains("напиши у ватсап", "вотсап", &asr());
+    // A real word one consonant away from a short target is NOT changed.
+    assert_unchanged("звичайний текст", &asr());
+}
 
 #[test]
 fn a_full_noisy_dictation() {

@@ -377,9 +377,13 @@ pub(crate) fn canonicalize_asr(
         by_key.into_iter().filter_map(|(k, v)| v.map(|w| (k, w))).collect()
     };
 
+    // First collapse multi-word targets across a sliding window of tokens, so a
+    // reading a recognizer split or glued is rejoined before per-token repair.
+    let text = join_multiword_targets(text, user_vocabulary);
+
     static WORD: LazyLock<Regex> =
         LazyLock::new(|| compile(r"[А-Яа-яЄєІіЇїҐґ][А-Яа-яЄєІіЇїҐґ'’`-]*"));
-    sub(text, &WORD, |m| {
+    sub(&text, &WORD, |m| {
         let token = whole(m);
         // A verbatim canonical target (same case) needs no repair.
         if ASR_TARGETS.values().any(|&s| s == token) || user_vocabulary.iter().any(|w| w == token) {
@@ -400,24 +404,15 @@ pub(crate) fn canonicalize_asr(
             return acronym.to_owned();
         }
 
-        // Brand readings and acronym keys, by exact phonetic key.
+        // Brand readings and acronym keys, by exact phonetic key. Matching is
+        // by the phonetic key ONLY — no edit-distance guess against the built-in
+        // sets, because they sit in open prose and a short target like `тест`
+        // (test) is one edit from a real word like `текст`. The phonetic key
+        // already folds the real ASR distortions (vowel confusions, akannya,
+        // separators, doublings); edit-distance is reserved for the caller's
+        // curated vocabulary below.
         if let Some(&surface) = ASR_TARGETS.get(&needle) {
             return surface.to_owned();
-        }
-
-        // A single residual edit against the built-in targets, but ONLY for
-        // longer tokens (>= 5 folded chars). This catches vowel confusions the
-        // phonetic key does not fold on purpose — chiefly о/а akannya
-        // (`монабанк` -> `монобанк`, `ватсап` -> `вотсап`) — while the length
-        // floor and 1-edit budget keep short prose words (`день`, `двір`) away
-        // from any target. Ties are rejected inside best_fuzzy_match_within.
-        if needle.chars().count() >= 5 {
-            let keys = ASR_TARGETS.keys().map(String::as_str);
-            if let Some((hit, _)) = fuzzy_match::best_fuzzy_match_within(&needle, keys, 1) {
-                if let Some(&surface) = ASR_TARGETS.get(hit) {
-                    return surface.to_owned();
-                }
-            }
         }
 
         // The caller's own vocabulary is the universal extension point. Here an
@@ -439,4 +434,137 @@ pub(crate) fn canonicalize_asr(
 
         token.to_owned()
     })
+}
+
+/// Multi-word built-in targets, keyed by the phonetic key of the whole surface
+/// with separators removed. Only targets that actually span more than one word
+/// (contain a space or hyphen) are here; single words are handled per-token.
+static MULTIWORD_BUILTINS: LazyLock<HashMap<String, &'static str>> = LazyLock::new(|| {
+    let mut by_key: HashMap<String, Option<&'static str>> = HashMap::new();
+    for &surface in ASR_TARGETS.values() {
+        if !surface.contains([' ', '-', '\u{2011}', '–', '—']) {
+            continue;
+        }
+        let key = fuzzy_match::canonical_key(surface);
+        by_key
+            .entry(key)
+            .and_modify(|slot| {
+                if *slot != Some(surface) {
+                    *slot = None;
+                }
+            })
+            .or_insert(Some(surface));
+    }
+    by_key.into_iter().filter_map(|(k, v)| v.map(|s| (k, s))).collect()
+});
+
+/// The most words any known multi-word target spans (window ceiling).
+fn max_target_words(user_vocabulary: &[String]) -> usize {
+    let builtin = MULTIWORD_BUILTINS.values().map(|s| word_count(s)).max().unwrap_or(0);
+    let user = user_vocabulary
+        .iter()
+        .filter(|w| w.contains([' ', '-', '\u{2011}', '–', '—']))
+        .map(|w| word_count(w))
+        .max()
+        .unwrap_or(0);
+    builtin.max(user).max(1)
+}
+
+/// Counts sub-words in a surface form split on spaces and hyphens.
+fn word_count(surface: &str) -> usize {
+    surface.split([' ', '-', '\u{2011}', '–', '—']).filter(|p| !p.is_empty()).count()
+}
+
+/// Rejoins a multi-word target that a recognizer split across tokens.
+///
+/// Scans the Cyrillic tokens left to right; at each position it tries the
+/// longest window first (down to two tokens), folds the window to one phonetic
+/// key (separators are already dropped by [`canonical_key`], so a split reading
+/// and its glued form share a key), and on a unique match against a multi-word
+/// target replaces the whole span with the canonical surface. Non-matching text
+/// — including single tokens — is emitted unchanged for the per-token pass.
+fn join_multiword_targets(text: &str, user_vocabulary: &[String]) -> String {
+    let max_words = max_target_words(user_vocabulary);
+    if max_words < 2 {
+        return text.to_owned();
+    }
+    // Per-call user multi-word index (space/hyphen entries only).
+    let user_multi: HashMap<String, &str> = {
+        let mut by_key: HashMap<String, Option<&str>> = HashMap::new();
+        for w in user_vocabulary {
+            if !w.contains([' ', '-', '\u{2011}', '–', '—']) {
+                continue;
+            }
+            let key = fuzzy_match::canonical_key(w);
+            by_key
+                .entry(key)
+                .and_modify(|slot| {
+                    if *slot != Some(w.as_str()) {
+                        *slot = None;
+                    }
+                })
+                .or_insert(Some(w.as_str()));
+        }
+        by_key.into_iter().filter_map(|(k, v)| v.map(|w| (k, w))).collect()
+    };
+
+    // Tokenize into (start, end, is_word) spans over the original text so the
+    // separators between tokens are preserved when nothing matches.
+    let is_word_char =
+        |c: char| is_uk(c) && !matches!(c, '\'' | '’' | '`' | '\u{02bc}' | '-' | '–' | '—');
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    // Word token boundaries (letters only; joiners split words here, since a
+    // window join concerns whole spoken words).
+    let mut words: Vec<(usize, usize)> = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if is_word_char(chars[i].1) {
+            let start = chars[i].0;
+            while i < chars.len() && is_word_char(chars[i].1) {
+                i += 1;
+            }
+            let end = if i < chars.len() { chars[i].0 } else { text.len() };
+            words.push((start, end));
+        } else {
+            i += 1;
+        }
+    }
+
+    let lookup = |key: &str| -> Option<&str> {
+        MULTIWORD_BUILTINS.get(key).copied().or_else(|| user_multi.get(key).copied())
+    };
+
+    let mut out = String::with_capacity(text.len());
+    let mut copied = 0; // byte offset copied into `out`
+    let mut w = 0; // index into `words`
+    while w < words.len() {
+        let mut matched = None;
+        let upper = (w + max_words).min(words.len());
+        // Longest window first.
+        for end in (w + 2..=upper).rev() {
+            let mut joined = String::new();
+            for &(s, e) in &words[w..end] {
+                joined.push_str(&fuzzy_match::canonical_key(&text[s..e]));
+            }
+            if let Some(surface) = lookup(&joined) {
+                matched = Some((end, surface));
+                break;
+            }
+        }
+        if let Some((end, surface)) = matched {
+            let span_start = words[w].0;
+            let span_end = words[end - 1].1;
+            out.push_str(&text[copied..span_start]);
+            out.push_str(surface);
+            copied = span_end;
+            w = end;
+        } else {
+            w += 1;
+        }
+    }
+    if copied == 0 {
+        return text.to_owned();
+    }
+    out.push_str(&text[copied..]);
+    out
 }

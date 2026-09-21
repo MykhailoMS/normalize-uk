@@ -85,6 +85,12 @@ pub(crate) fn canonical_key(token: &str) -> String {
             // Iotated back vowels: the glide is frequently dropped.
             'я' => 'а',
             'ю' => 'у',
+            // о/а akannya — a very common Ukrainian ASR confusion in unstressed
+            // position (`монобанк`->`монабанк`, `вотсап`->`ватсап`). Folded here
+            // so those resolve on the exact phonetic key; against the closed
+            // target set this does not merge two real targets (collisions are
+            // dropped when the index is built).
+            'о' => 'а',
             // Routinely merged consonant and its Russian twin.
             'ґ' => 'г',
             // Surzhyk / Russian carry-over from the input side.
@@ -341,6 +347,13 @@ mod tests {
     fn phonetic_key_folds_g_variants_and_doublings() {
         assert_eq!(canonical_key("ґуґл"), canonical_key("гугл"));
         assert_eq!(canonical_key("ссавці"), canonical_key("савці"));
+    }
+
+    #[test]
+    fn phonetic_key_folds_akannya() {
+        // о and а share a key (unstressed о/а confusion).
+        assert_eq!(canonical_key("монобанк"), canonical_key("монабанк"));
+        assert_eq!(canonical_key("вотсап"), canonical_key("ватсап"));
     }
 
     #[test]

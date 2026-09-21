@@ -57,14 +57,12 @@ fn distort(word: &str, rng: &mut Rng) -> String {
         } else if c == 'є' && rng.chance(3) {
             c = 'е';
         }
-        // о/а akannya.
-        else if c == 'о' && rng.chance(3) {
+        // о/а akannya and iotation loss (я→а) both collapse to 'а'.
+        else if (c == 'о' || c == 'я') && rng.chance(3) {
             c = 'а';
         }
-        // Iotation loss.
-        else if c == 'я' && rng.chance(3) {
-            c = 'а';
-        } else if c == 'ю' && rng.chance(3) {
+        // Iotation loss on ю.
+        else if c == 'ю' && rng.chance(3) {
             c = 'у';
         }
         // ґ merges to г.

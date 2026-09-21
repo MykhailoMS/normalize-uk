@@ -152,6 +152,23 @@ assert_eq!(normalize_with("автентіфікація", &options), "автен
 
 Load the list from a one-column `word` TSV with `load_asr_vocabulary_tsv`.
 
+A recognizer also splits or glues multi-word targets (`вай фай` / `вайфай` for
+`вай-фай`). Because the phonetic key drops separators, a split window of tokens
+and its glued form share one key, so a sliding-window pass rejoins either shape
+to the canonical target — including a multi-word entry supplied via
+`asr_vocabulary`:
+
+```rust
+# use normalize_uk::uktextnorm::{normalize_with, InputTolerance, NormalizeOptions};
+let options = NormalizeOptions {
+    input_tolerance: InputTolerance::Asr,
+    asr_vocabulary: vec!["вай-фай".to_owned()],
+    ..Default::default()
+};
+assert!(normalize_with("увімкни вай фай", &options).contains("вай-фай")); // split
+assert!(normalize_with("увімкни вайфай", &options).contains("вай-фай")); // glued
+```
+
 ## Numbers
 
 ```rust
